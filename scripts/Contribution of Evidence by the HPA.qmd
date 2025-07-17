@@ -3,3 +3,485 @@ title: "Contribution of Evidence by the HPA"
 format: html
 ---
 
+# Load libraries
+
+```{r}
+library(tidyverse)
+library(ggalluvial)
+library(RColorBrewer)
+```
+
+# Load data
+
+```{r}
+#hpa_data_v25 <- read_csv("data/hpa_evidence_v25.csv")
+hpa_data <- read_csv("../data/HPA v.24/hpa_data_v24.csv")
+head(hpa_data)
+
+tissue_data <- read_tsv("../data/HPA v.24/rna_tissue_consensus.tsv")
+
+uniprot_info <- read_tsv("../data/UniProt/uniprot_mapping_2025_05_26.tsv")
+head(uniprot_info)
+```
+
+# Plots
+
+## Sankey: Comparing HPA and UniProt evidence
+
+```{r, fig.width = 10, fig.height = 10}
+# Step 1: Prepare categorized evidence for Sankey plot
+sankey_data <- hpa_data %>%
+  dplyr::select(Ensembl, Uniprot, `HPA evidence`) %>%
+  full_join(uniprot_info %>% dplyr::select(Entry, `Protein existence`), by = c("Uniprot" = "Entry")) %>%
+  # Switch UniProt evidence for Protein existence
+  dplyr::rename(`UniProt evidence` = `Protein existence`) %>%
+  mutate(
+    HPA = dplyr::case_when(
+      is.na(`HPA evidence`) ~ "NA",
+      TRUE ~ `HPA evidence`
+    ),
+    UniProt = dplyr::case_when(
+      is.na(`UniProt evidence`) ~ "NA",
+      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
+      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
+      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
+      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
+      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
+      TRUE ~ `UniProt evidence`
+    )
+  ) %>%
+  filter(HPA != "NA") |>
+  count(HPA, UniProt, name = "Freq")
+
+# Step 2: Define colors for each evidence category
+hpa_colors <- c(
+  "Evidence at protein level" = "darkgreen",
+  "Evidence at transcript level" = "darkorange",
+  "No human protein/transcript evidence" = "firebrick",
+  "NA" = "#999999"
+)
+uniprot_colors <- c(
+  "PE1: Evidence at protein level" = "darkgreen",
+  "PE2: Evidence at transcript level" = "darkorange",
+  "PE3: Inferred from homology" = "#cccccc",  # light gray
+  "PE4: Predicted"              = "#888888",  # medium gray
+  "PE5: Uncertain"              = "#444444",  # dark gray
+  "NA"                          = "#111111"   # almost black
+)
+# Combine for scale
+evidence_colors <- c(hpa_colors, uniprot_colors)
+
+# Step 3: Plot Sankey with coloring by HPA category (flows) and by stratum (bar)
+
+# After count() step
+sankey_data <- sankey_data %>%
+  mutate(
+    UniProt = factor(
+      UniProt,
+      levels = c("PE1: Evidence at protein level", "PE2: Evidence at transcript level", "PE3: Inferred from homology", "PE4: Predicted", "PE5: Uncertain", "NA")
+    )
+  )
+
+# Calculate label with count for HPA and UniProt
+sankey_data_label <- sankey_data %>%
+  tidyr::pivot_longer(
+    cols = c(HPA, UniProt),
+    names_to = "axis",
+    values_to = "stratum"
+  ) %>%
+  group_by(axis, stratum) %>%
+  summarise(count = sum(Freq), .groups = "drop") %>%
+  mutate(label = paste0(stratum, "\n(", count, ")"))
+
+# Sankey plot
+ggplot(sankey_data,
+       aes(axis1 = HPA, axis2 = UniProt, y = Freq)) +
+  geom_alluvium(aes(fill = HPA), width = 0.4, alpha = 0.8, color = "black", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)), width = 0.5, color = "black") +
+  # Custom labels with count below the stratum name
+  geom_text(
+    stat = "stratum",
+    aes(
+      label = after_stat(
+        paste0(stratum, "\n(", ..count.., ")")
+      )
+    ),
+    size = 4,
+    vjust = 1.2
+  ) +
+  scale_x_discrete(
+    limits = c("HPA Evidence", "UniProt Evidence"),
+    expand = c(0.05, 0.05)
+  ) +
+  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
+  labs(
+    title = "Sankey Plot of HPA and UniProt Evidence Categories",
+    y = "Number of Genes",
+    fill = "Evidence Category"
+  ) +
+  theme_minimal(base_size = 14)
+
+ggsave("../plots/pdf/Figure 2/Figure 2A.pdf", width = 10, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 2/Figure 2A.png", width = 10, height = 10, dpi = 300)
+```
+
+## Sankey: Highlighting only genes that have no UniProt evidence
+
+```{r, fig.width = 10, fig.height = 7}
+# Prepare data for Sankey
+sankey_data <- hpa_data %>%
+  select(Ensembl, Uniprot, `HPA evidence`) %>%
+  full_join(
+    uniprot_info %>% select(Entry, `Protein existence`),
+    by = c("Uniprot" = "Entry")
+  ) %>%
+  rename(`UniProt evidence` = `Protein existence`) %>%
+  mutate(
+    HPA = case_when(
+      is.na(`HPA evidence`) ~ "NA",
+      TRUE ~ `HPA evidence`
+    ),
+    UniProt = case_when(
+      is.na(`UniProt evidence`) ~ "NA",
+      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
+      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
+      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
+      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
+      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
+      TRUE ~ `UniProt evidence`
+    )
+  ) %>%
+  filter(
+    UniProt %in% c(
+      "PE3: Inferred from homology",
+      "PE4: Predicted",
+      "PE5: Uncertain",
+      "NA"
+    )
+  ) %>%
+  filter(HPA != "NA") %>%
+  filter(HPA != "No human protein/transcript evidence") %>%
+  count(HPA, UniProt, name = "Freq")
+
+# Set color palettes
+hpa_colors <- c(
+  "Evidence at protein level" = "darkgreen",
+  "Evidence at transcript level" = "darkorange",
+  "No human protein/transcript evidence" = "firebrick",
+  "NA" = "#999999"
+)
+uniprot_colors <- c(
+  "PE3: Inferred from homology" = "#cccccc",
+  "PE4: Predicted"              = "#888888",
+  "PE5: Uncertain"              = "#444444",
+  "NA"                          = "#111111"
+)
+evidence_colors <- c(hpa_colors, uniprot_colors)
+
+# Order UniProt factor levels for better plotting
+sankey_data <- sankey_data %>%
+  mutate(
+    UniProt = factor(
+      UniProt,
+      levels = c(
+        "PE3: Inferred from homology",
+        "PE4: Predicted",
+        "PE5: Uncertain",
+        "NA"
+      )
+    )
+  )
+
+total_genes <- sum(sankey_data$Freq)
+
+ggplot(sankey_data,
+       aes(
+         axis1 = UniProt,
+         axis2 = HPA,
+         y     = Freq
+       )
+) +
+  geom_alluvium(aes(fill = HPA),
+                width = 0.4, alpha = 0.8,
+                color = "black", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5, color = "black") +
+  geom_text(
+    stat = "stratum",
+    aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
+    size = 4, vjust = 1.2
+  ) +
+  scale_x_discrete(
+    limits = c("UniProt", "HPA"),
+    labels = c("UniProt Evidence", "HPA Evidence"),
+    expand = c(0.05, 0.05)
+  ) +
+  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
+  labs(
+    title = sprintf("HPA contributing genes v.24 (n = %d)", total_genes),
+    y     = "Number of Genes",
+    fill  = "Evidence Category"
+  ) +
+  theme_minimal(base_size = 14)
+
+ggsave("../plots/pdf/Figure 2/Figure 2B.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 2/Figure 2B.png", width = 10, height = 7, dpi = 300)
+```
+
+## Dataset contribution
+
+### Venn: Protein level evidence
+
+```{r}
+
+```
+
+### Upset: Transcript level evidence
+
+```{r}
+
+```
+
+
+## Sankey: Tissue specificity
+
+```{r, fig.width = 10, fig.height = 7}
+# ---- 1. Re-factor tissue specificity in the desired order ----
+desired_tissue_levels <- c(
+  "Tissue enriched",
+  "Group enriched",
+  "Tissue enhanced",
+  "Low tissue specificity",
+  "Not detected"
+)
+
+sankey_data <- sankey_data %>%
+  mutate(
+    `RNA tissue specificity` = factor(
+      `RNA tissue specificity`,
+      levels = desired_tissue_levels
+    )
+  )
+
+# ---- 2. Build your colour vectors ----
+hpa_evidence_colors <- c(
+  "Evidence at protein level"    = "darkgreen",
+  "Evidence at transcript level" = "darkorange",
+  "No evidence"                  = "firebrick"
+)
+
+tissue_spec_colors <- c(
+  "Tissue enriched"         = "#E31A1B",
+  "Group enriched"          = "#FE9D00",
+  "Tissue enhanced"         = "#B65EC4",
+  "Low tissue specificity"  = "#7D7D7D",
+  "Not detected"            = "#E4E4E4"
+)
+
+all_colors <- c(hpa_evidence_colors, tissue_spec_colors)
+
+# ---- 3. Draw the Sankey with HPA on the left, tissue on the right ----
+p <- ggplot(
+  sankey_data,
+  aes(
+    axis1 = `HPA evidence`,
+    axis2 = `RNA tissue specificity`,
+    y     = Freq
+  )
+) +
+  # alluvia coloured by the HPA evidence
+  geom_alluvium(aes(fill = `HPA evidence`),
+                width = 0.3, alpha = 0.8,
+                color = "gray50", size = 0.2) +
+  # strata on both sides, each side uses the same fill mapping
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5, color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
+            size = 4, vjust = 1.2) +
+  # label the two axes in the correct order
+  scale_x_discrete(
+    labels = c("HPA Evidence", "RNA Tissue Specificity"),
+    name   = NULL,
+    expand = c(.05, .05)
+  ) +
+  # supply the unified palette
+  scale_fill_manual(values = all_colors) +
+  labs(
+    title = sprintf("HPA evidence → RNA tissue specificity\n(n = %d genes)", sum(sankey_data$Freq)),
+    y     = "Number of Genes",
+    fill  = "Category"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x     = element_text(size = 14, face = "bold"),
+    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+
+# display
+print(p)
+
+# ---- 4. Save ----
+ggsave("../plots/pdf/Figure 2/Figure 2E.pdf", p, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 2/Figure 2E.png", p, width = 10, height = 7, dpi = 300)
+```
+
+## UMAP: 
+
+```{r}
+hpa_contributing_tissue_detected_genes <- hpa_data %>%
+  select(Ensembl, Uniprot, `HPA evidence`) %>%
+  full_join(
+    uniprot_info %>% select(Entry, `Protein existence`),
+    by = c("Uniprot" = "Entry")
+  ) %>%
+  rename(`UniProt evidence` = `Protein existence`) %>%
+  mutate(
+    HPA = case_when(
+      is.na(`HPA evidence`) ~ "NA",
+      TRUE ~ `HPA evidence`
+    ),
+    UniProt = case_when(
+      is.na(`UniProt evidence`) ~ "NA",
+      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
+      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
+      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
+      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
+      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
+      TRUE ~ `UniProt evidence`
+    )
+  ) %>%
+  filter(
+    UniProt %in% c(
+      "PE3: Inferred from homology",
+      "PE4: Predicted",
+      "PE5: Uncertain",
+      "NA"
+    )
+  ) %>%
+  filter(HPA != "NA") %>%
+  filter(HPA != "No human protein/transcript evidence") |>
+  inner_join(hpa_data |> select(Ensembl, `RNA tissue specificity`), by = "Ensembl") |>
+  filter(`RNA tissue specificity` != "Not detected")
+
+umap_data <- tissue_data %>%
+  rename(Ensembl = Gene) |>
+  filter(Ensembl %in% hpa_contributing_tissue_detected_genes$Ensembl) |>
+  inner_join(hpa_data |> select(Ensembl, `HPA evidence`, `RNA tissue specificity`), by = "Ensembl") |>
+  mutate(`RNA tissue specificity` = factor(`RNA tissue specificity`, levels = c("Tissue enriched", "Group enriched", "Tissue enhanced", "Low tissue specificity")))
+
+library(HDAnalyzeR)
+
+umap_hd <- hd_umap(dat = umap_data |> 
+          select(Ensembl, Tissue, nTPM) |> 
+          pivot_wider(names_from = Ensembl, values_from = nTPM),
+        by_sample = FALSE,
+        impute = TRUE,
+        components = 2,
+        seed = 123)
+
+umap <- umap_hd$umap_res |>
+  rename(Ensembl = Features) |>
+  inner_join(umap_data, by = "Ensembl")
+```
+
+```{r}
+p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `RNA tissue specificity`, shape = `HPA evidence`)) +
+  geom_point(size = 2, alpha = 0.7) +
+  scale_color_brewer(palette = "Set1") +
+  scale_shape_manual(values = c(16, 17, 18, 15)) + # Circle, Triangle, Square, Diamond
+  labs(
+    title = "UMAP of HPA Contributing Genes",
+    x = "UMAP1",
+    y = "UMAP2",
+    color = "RNA Tissue Specificity",
+    shape = "HPA Evidence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x     = element_text(size = 14, face = "bold"),
+    axis.text.y     = element_text(size = 14, face = "bold"),
+    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+
+p_umap
+
+#ggsave("../plots/png/Figure 2/Figure 2F.pdf", p_umap, width = 8, height = 6, dpi = 300)
+#ggsave("../plots/png/Figure 2/Figure 2F.png", p_umap, width = 8, height = 6, dpi = 300)
+```
+
+
+```{r}
+p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `HPA evidence`, shape = `RNA tissue specificity`)) +
+  geom_point(size = 2, alpha = 0.7) +
+  scale_color_brewer(palette = "Set1") +
+  scale_shape_manual(values = c(16, 17, 18, 15)) + # Circle, Triangle, Square, Diamond
+  labs(
+    title = "UMAP of HPA Contributing Genes",
+    x = "UMAP1",
+    y = "UMAP2",
+    color = "RNA Tissue Specificity",
+    shape = "HPA Evidence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x     = element_text(size = 14, face = "bold"),
+    axis.text.y     = element_text(size = 14, face = "bold"),
+    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+
+p_umap
+```
+
+```{r}
+max_tissue_per_gene <- umap %>% 
+  # your big tibble
+  group_by(Ensembl) %>%          # group by gene (you can drop Gene_name if you don’t need it)
+  slice_max(nTPM, with_ties = FALSE) %>%    # take the single row with highest nTPM
+  ungroup() %>% 
+  select(Ensembl, Tissue, nTPM) %>% 
+  rename(
+    `Max tissue` = Tissue,
+    `Max nTPM`   = nTPM
+  )
+
+p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE) |>
+                   inner_join(max_tissue_per_gene, by = "Ensembl"), 
+                 aes(x = UMAP1, y = UMAP2, color = `Max tissue`, shape = `HPA evidence`)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(
+    title = "UMAP of HPA Contributing Genes",
+    x = "UMAP1",
+    y = "UMAP2",
+    color = "RNA Tissue Specificity",
+    shape = "HPA Evidence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x     = element_text(size = 14, face = "bold"),
+    axis.text.y     = element_text(size = 14, face = "bold"),
+    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+
+p_umap
+
+max_tissue_per_gene |>
+  # count max tissue
+  count(`Max tissue`, name = "Number of genes") |>
+  arrange(desc(`Number of genes`))
+```
+
+
+
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```
+
+End of Quarto file.
