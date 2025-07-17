@@ -93,8 +93,8 @@ fig1a <- ggplot(ensembl_data_with_group, aes(x = ensembl_version, fill = version
 
 fig1a
 
-ggsave("plots/png/Figure 1A.png", fig1a, width = 10, height = 6, dpi = 300)
-ggsave("plots/pdf/Figure 1A.pdf", fig1a, width = 10, height = 6, dpi = 300)
+ggsave("plots/png/Figure 1/Figure 1A.png", fig1a, width = 10, height = 6, dpi = 300)
+ggsave("plots/pdf/Figure 1/Figure 1A.pdf", fig1a, width = 10, height = 6, dpi = 300)
 ```
 
 ### Additional information
@@ -168,8 +168,8 @@ fig1b_minimal <- pheatmap(
 
 fig1b_minimal
 
-ggsave("plots/png/Figure 1B minimal.png", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1B minimal.pdf", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
+ggsave("plots/png/Figure 1/Figure 1B minimal.png", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
+ggsave("plots/pdf/Figure 1/Figure 1B minimal.pdf", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
 ```
 
 ### More detailed version
@@ -241,8 +241,8 @@ fig1b <- pheatmap(
 
 fig1b
 
-ggsave("plots/png/Figure 1B.png", fig1b$gtable, width = 14, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1B.pdf", fig1b$gtable, width = 14, height = 10, dpi = 300)
+ggsave("plots/png/Figure 1/Figure 1B.png", fig1b$gtable, width = 14, height = 10, dpi = 300)
+ggsave("plots/pdf/Figure 1/Figure 1B.pdf", fig1b$gtable, width = 14, height = 10, dpi = 300)
 ```
 
 # All genes ever added to Ensembl
@@ -291,8 +291,8 @@ fig1c_minimal <- pheatmap(
 
 fig1c_minimal
 
-ggsave("plots/png/Figure 1C minimal.png", width = 24, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1C minimal.pdf", width = 24, height = 10, dpi = 300)
+ggsave("plots/png/Figure 1/Figure 1C minimal.png", width = 24, height = 10, dpi = 300)
+ggsave("plots/pdf/Figure 1/Figure 1C minimal.pdf", width = 24, height = 10, dpi = 300)
 ```
 
 ## More detailed version
@@ -374,11 +374,11 @@ fig1c <- pheatmap(
 
 fig1c
 
-png(filename = "plots/png/Figure 1C.png", width = 24, height = 10, units = "in", res = 300)
+png(filename = "plots/png/Figure 1/Figure 1C.png", width = 24, height = 10, units = "in", res = 300)
 grid::grid.draw(fig1c$gtable)
 dev.off()
 
-pdf(file = "plots/pdf/Figure 1C.pdf", width = 24, height = 10)
+pdf(file = "plots/pdf/Figure 1/Figure 1C.pdf", width = 24, height = 10)
 grid::grid.draw(fig1c$gtable)
 dev.off()
 ```
@@ -411,12 +411,12 @@ figure_1 <- cowplot::plot_grid(
   rel_heights = c(1, 1.1) # You can tweak this ratio for your desired proportions
 )
 
-cairo_pdf("plots/pdf/Figure 1.pdf", width = 24, height = 28, pointsize = 10)
+cairo_pdf("plots/pdf/Figure 1/Figure 1.pdf", width = 24, height = 28, pointsize = 10)
 print(figure_1)
 dev.off()
 
 # Save using cowplot function
-cowplot::save_plot("plots/png/Figure 1.png", figure_1, base_width = 24, base_height = 28, dpi = 300)
+cowplot::save_plot("plots/png/Figure 1/Figure 1.png", figure_1, base_width = 24, base_height = 28, dpi = 300)
 ```
 
 # SessionInfo
