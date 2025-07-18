@@ -3,3 +3,402 @@ title: "The HPA Evidence Proteome"
 format: html
 ---
 
+# Load packages
+
+```{r}
+library(tidyverse)
+library(ComplexUpset)
+library(eulerr)
+library(patchwork)
+library(cowplot)
+```
+
+# Load data
+
+```{r}
+# Load the upcoming updated HPA data (version 25)
+hpa_data <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
+```
+
+# Plots
+
+## Upset - Overlapping evidence status
+
+```{r}
+# Step 1: Use hpa_evidence_v25 as the base (since it now includes all annotation columns)
+# Only keep rows with transcript-level evidence for UpSet of the RNA evidence sets
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
+
+evidence_only <- hpa_data %>%
+  filter(Dataset %in% rna_datasets)
+
+# Step 2: Create wide format for UpSet
+upset_data <- evidence_only %>%
+  mutate(set_name = Evidence) %>%
+  select(Ensembl, set_name) %>%
+  distinct() %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = set_name, values_from = value, values_fill = 0)
+
+# Step 3: Set the order you want (reverse for plotting, first = top)
+set_order <- c("Tissue evidence", "Brain evidence", "Cell type evidence", "Immune cell type evidence", "Cell line evidence")
+# reverse set_order
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+upset_data$overlap_count <- rowSums(upset_data[, set_order])
+
+library(reshape2)
+# (or tidyr::pivot_longer works too)
+
+upset_long <- upset_data %>%
+  select(Ensembl, overlap_count, all_of(set_order)) %>%
+  pivot_longer(cols = all_of(set_order), names_to = "set", values_to = "present") %>%
+  filter(present == 1) 
+
+
+# Step 4: UpSet plot with set size numbers
+fig2a <- ComplexUpset::upset(
+  data = upset_data,
+  intersect   = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+  set_sizes = (
+    upset_set_size(position = "left") +
+      geom_text(
+        aes(label = ..count..),
+        stat     = "count",
+        hjust    = 1,
+        size     = 4,
+        fontface = "bold",
+        color    = "white"
+      ) +
+      labs(y = "Number of genes")
+  ),
+  width_ratio = 0.3,
+  sort_sets   = FALSE,
+  guides      = "over"
+)
+
+fig2a
+
+ggsave("../plots/pdf/Figure 2/Figure 2A.pdf", fig2a, width = 18, height = 7)
+ggsave("../plots/png/Figure 2/Figure 2A.png", fig2a, width = 18, height = 7)
+```
+
+### Additional annotations
+
+```{r}
+# Step 1: Use hpa_evidence_v25 as the base (since it now includes all annotation columns)
+# Only keep rows with transcript-level evidence for UpSet of the RNA evidence sets
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
+
+evidence_only <- hpa_data %>%
+  filter(Dataset %in% rna_datasets)
+
+# Step 2: Create wide format for UpSet
+upset_data <- evidence_only %>%
+  mutate(set_name = Evidence) %>%
+  select(Ensembl, set_name) %>%
+  distinct() %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = set_name, values_from = value, values_fill = 0)
+
+# Step 3: Set the order you want (reverse for plotting, first = top)
+set_order <- c("Tissue evidence", "Brain evidence", "Cell type evidence", "Immune cell type evidence", "Cell line evidence")
+# reverse set_order
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+upset_data$overlap_count <- rowSums(upset_data[, set_order])
+
+library(reshape2)
+# (or tidyr::pivot_longer works too)
+
+upset_long <- upset_data %>%
+  select(Ensembl, overlap_count, all_of(set_order)) %>%
+  pivot_longer(cols = all_of(set_order), names_to = "set", values_to = "present") %>%
+  filter(present == 1) 
+
+
+# Step 4: UpSet plot with set size numbers
+fig2a <- ComplexUpset::upset(
+  data = upset_data,
+  intersect   = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+  set_sizes = (
+    upset_set_size(
+      geom=geom_bar(
+                aes(fill=mpaa, x=group),
+                width=0.8
+            ),
+      position = "right"
+      )
+    ),
+  width_ratio = 0.3,
+  sort_sets   = FALSE,
+  guides      = "over"
+)
+
+fig2a
+```
+
+
+## B - barplot - Overlapping evidence status
+
+```{r}
+# Step 1: Filter out "No human protein/transcript evidence"
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
+
+rna_evidence <- hpa_data %>%
+  filter(Dataset %in% rna_datasets) |> 
+  # Remove entries that starts with No in the Evidence column
+  filter(!str_starts(Evidence, "No")) 
+
+# Step 2: Count in how many datasets each gene appears
+gene_counts <- rna_evidence %>%
+  group_by(Ensembl) %>%
+  summarise(N_evidence = n_distinct(Evidence), .groups = "drop")
+
+# Step 3: Count genes per Dataset per overlap category
+bar_data <- rna_evidence %>%
+  left_join(gene_counts, by = "Ensembl") %>%
+  count(Dataset, N_evidence)
+
+# Label levels
+bar_data <- bar_data %>%
+  mutate(N_evidence = factor(N_evidence,
+                             levels = 1:5,
+                             labels = c("Unique to One", "Shared by 2", "Shared by 3", "Shared by 4", "Shared by All")))
+
+# Step 4: Compute total genes per dataset for text labels
+label_data <- bar_data %>%
+  group_by(Dataset) %>%
+  summarise(total_genes = sum(n))
+
+# ... Steps 1-4 as you have them ...
+
+set_order <- c("Cell line", "Immune cell type", "Cell type", "Brain", "Tissue")
+
+bar_data <- bar_data %>%
+  mutate(Dataset = factor(Dataset, levels = set_order)) %>%
+  arrange(Dataset)
+
+label_data <- label_data %>%
+  mutate(Dataset = factor(Dataset, levels = set_order)) %>%
+  arrange(Dataset)
+
+# Step 5: Plot (no reorder, just use Dataset as factor)
+fig2b <- ggplot(bar_data, aes(x = Dataset, y = n, fill = N_evidence)) +
+  geom_bar(stat = "identity") +
+  geom_text(data = label_data,
+            aes(x = Dataset, y = total_genes, label = total_genes),
+            inherit.aes = FALSE,
+ #           hjust = -0.1,   # adjust as needed
+            vjust = -0.1,
+            size = 5) +
+  scale_fill_manual(values = c("grey70", "lightblue", "blue", "darkblue", "black")) +
+  labs(x = "Dataset", y = "Number of Genes", fill = "Overlap Level",
+       title = "Gene Overlap Across Datasets, >= 1 nTPM") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+fig2b
+
+ggsave("../plots/pdf/Figure 2/Figure 2B.pdf", fig2b, width = 10, height = 7)
+ggsave("../plots/png/Figure 2/Figure 2B.png", fig2b, width = 10, height = 7)
+```
+
+## C - Upset - Protein evidence status
+
+```{r}
+# Define your protein evidence datasets
+protein_datasets <- c("Western blot", "Immunohistochemistry", "Immunofluorescence")
+
+# Filter and select
+upset_base <- hpa_data %>%
+  filter(Dataset %in% protein_datasets) %>%
+  select(Ensembl, Evidence, Dataset, `Evidence annotation (protein)`)
+
+# Make a binary wide matrix: 1 if evidence in dataset, 0 otherwise
+upset_data <- upset_base %>%
+  distinct(Ensembl, Evidence) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = Evidence, values_from = value, values_fill = 0)
+
+set_order <- c("Immunofluorescence evidence", "Immunohistochemistry evidence", "Western blot evidence",
+               "No immunofluorescence evidence", "No immunohistochemistry evidence", "No western blot evidence")
+# Reverse the order for plotting
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+fig2c <- ComplexUpset::upset(
+  upset_data,
+  intersect = set_order,
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4
+      ) 
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over",
+)
+
+fig2c
+```
+
+## D - Protein evidence status (Venn diagram)
+
+```{r}
+# Define your protein evidence datasets
+protein_datasets <- c("Western blot", "Immunohistochemistry", "Immunofluorescence")
+
+# Filter and select
+venn_base <- hpa_data %>%
+  filter(Dataset %in% protein_datasets) %>%
+  select(Ensembl, Evidence, Dataset, `Evidence annotation (protein)`) |>
+  filter(`Evidence annotation (protein)` == "Evidence on protein-level")
+
+
+# Make a binary wide matrix: 1 if evidence in dataset, 0 otherwise
+venn_data <- venn_base %>%
+  distinct(Ensembl, Evidence) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = Evidence, values_from = value, values_fill = 0)
+
+
+# Step 2: Make a logical matrix for Eulerr
+supported_mat <- venn_data %>%
+  select(Ensembl, `Immunofluorescence evidence`, `Immunohistochemistry evidence`, `Western blot evidence`) %>%
+  distinct()
+
+# Step 3: Set names for Eulerr
+colnames(supported_mat) <- c("Ensembl", "IF", "IHC", "WB")
+
+# Step 4: Create the Venn (logical matrix to eulerr)
+venn_fit <- eulerr::euler(
+  supported_mat %>% select(-Ensembl)
+)
+
+# Step 5: Plot
+fig2c <- plot(
+  venn_fit,
+  fills = list(fill = c("darkgreen", "darkorange", "steelblue"), alpha = 0.6),
+  labels = list(font = 2),
+  quantities = TRUE,
+  main = "Genes with Supported Status (IF, IHC, WB)"
+)
+
+fig2c
+
+ggsave("../plots/pdf/Figure 2/Figure 2C.pdf", fig2c, width = 7, height = 5)
+ggsave("../plots/png/Figure 2/Figure 2C.png", fig2c, width = 7, height = 5)
+```
+
+```{r}
+multi_target_data <- read_tsv("data/corrections/genes_with_only_multitarget_abs.txt")
+```
+
+```{r}
+venn_data |>
+  filter(Ensembl %in% multi_target_data$ensg_id)
+```
+
+
+# Finalize plot
+
+```{r}
+library(ggpubr)
+library(gridGraphics)
+
+quartz()
+
+# Plot and capture
+plot(venn_fit,
+     fills = list(fill = c("darkgreen", "darkorange", "steelblue"), alpha = 0.6),
+     labels = list(font = 2),
+     quantities = TRUE,
+     main = "Genes with Supported Status (IF, IHC, WB)"
+)
+fig2d_grob <- grid::grid.grab() # Note: grid.grab(), not grid.grabExpr()
+
+# Turn off the temporary device if you used one
+# dev.off()
+
+# Make ggplot-friendly
+fig2d_gg <- cowplot::ggdraw() + cowplot::draw_grob(fig2d_grob)
+
+
+figure_2 <- cowplot::plot_grid(
+  fig2a, fig2b, fig2c, fig2d_gg,
+  labels = "AUTO", label_size = 12, ncol = 2
+)
+
+cairo_pdf("results/figures/figure 2/Figure 2.pdf", width = 30, height = 18, pointsize = 5)
+print(figure_2)
+dev.off()
+```
+
+## Revised
+
+```{r}
+library(ggpubr)
+library(gridGraphics)
+
+quartz()
+
+# Plot and capture
+plot(venn_fit,
+     fills = list(fill = c("darkgreen", "darkorange", "steelblue"), alpha = 0.6),
+     labels = list(font = 2),
+     quantities = TRUE,
+     main = "Genes with Supported Status (IF, IHC, WB)"
+)
+fig2d_grob <- grid::grid.grab() # Note: grid.grab(), not grid.grabExpr()
+
+# Turn off the temporary device if you used one
+# dev.off()
+
+# Make ggplot-friendly
+fig2d_gg <- cowplot::ggdraw() + cowplot::draw_grob(fig2d_grob)
+
+
+figure_2 <- cowplot::plot_grid(
+  fig2a, fig2b, fig2d_gg,
+  labels = "AUTO", label_size = 12, ncol = 2
+)
+
+cairo_pdf("../plots/pdf/figure 2/Figure 2.pdf", width = 30, height = 18, pointsize = 5)
+print(figure_2)
+dev.off()
+```
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```
+
+End of Quarto document.
