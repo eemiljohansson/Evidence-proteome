@@ -10,6 +10,8 @@ library(tidyverse)
 library(ggalluvial)
 library(RColorBrewer)
 library(eulerr)
+library(HDAnalyzeR)
+library(writexl)
 ```
 
 # Load data
@@ -509,47 +511,31 @@ ggsave("../plots/png/Figure 3/Figure 3E.png", p, width = 10, height = 7, dpi = 3
 
 ```{r}
 hpa_contributing_tissue_detected_genes <- hpa_data %>%
-  select(Ensembl, Uniprot, `HPA evidence`) %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
   full_join(
-    uniprot_info %>% select(Entry, `Protein existence`),
-    by = c("Uniprot" = "Entry")
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
   ) %>%
-  rename(`UniProt evidence` = `Protein existence`) %>%
   mutate(
-    HPA = case_when(
-      is.na(`HPA evidence`) ~ "NA",
-      TRUE ~ `HPA evidence`
-    ),
-    UniProt = case_when(
-      is.na(`UniProt evidence`) ~ "NA",
-      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
-      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
-      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
-      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
-      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
-      TRUE ~ `UniProt evidence`
-    )
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
   ) %>%
   filter(
-    UniProt %in% c(
-      "PE3: Inferred from homology",
-      "PE4: Predicted",
-      "PE5: Uncertain",
-      "NA"
-    )
+    `Uniprot evidence` %in% c(
+      "No evidence",
+      "Protein uncertain (PE5)",
+      "Protein predicted (PE4)",
+      "Protein inferred from homology (PE3)"
+    ),
+    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
   ) %>%
-  filter(HPA != "NA") %>%
-  filter(HPA != "No human protein/transcript evidence") |>
-  inner_join(hpa_data |> select(Ensembl, `RNA tissue specificity`), by = "Ensembl") |>
+  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
   filter(`RNA tissue specificity` != "Not detected")
 
 umap_data <- tissue_data %>%
   rename(Ensembl = Gene) |>
   filter(Ensembl %in% hpa_contributing_tissue_detected_genes$Ensembl) |>
-  inner_join(hpa_data |> select(Ensembl, `HPA evidence`, `RNA tissue specificity`), by = "Ensembl") |>
+  inner_join(hpa_contributing_tissue_detected_genes |> select(Ensembl, `HPA evidence`, `RNA tissue specificity`), by = "Ensembl") |>
   mutate(`RNA tissue specificity` = factor(`RNA tissue specificity`, levels = c("Tissue enriched", "Group enriched", "Tissue enhanced", "Low tissue specificity")))
-
-library(HDAnalyzeR)
 
 umap_hd <- hd_umap(dat = umap_data |> 
           select(Ensembl, Tissue, nTPM) |> 
@@ -653,99 +639,68 @@ max_tissue_per_gene |>
   arrange(desc(`Number of genes`))
 ```
 
-### All genes
-
 ```{r}
-umap_data_full <- tissue_data %>%
-  rename(Ensembl = Gene) |>
-  inner_join(hpa_data |> select(Ensembl, `HPA evidence`, `RNA tissue specificity`), by = "Ensembl") |>
-  mutate(`RNA tissue specificity` = factor(`RNA tissue specificity`, levels = c("Tissue enriched", "Group enriched", "Tissue enhanced", "Low tissue specificity")))
+# define the tissues you want special colours for
+highlighted <- c(
+  "bone marrow", "brain", "intestine", "liver",
+  "lymphoid tissue", "retina", "skeletal muscle", "testis"
+)
 
-library(HDAnalyzeR)
+# pick one colour per tissue (I’ve just grabbed a palette, feel free to swap)
+tissue_colours <- c(
+  "bone marrow"     = "#1b9e77",
+  "brain"           = "#d95f02",
+  "intestine"       = "#7570b3",
+  "liver"           = "#e7298a",
+  "lymphoid tissue" = "#66a61e",
+  "retina"          = "#e6ab02",
+  "skeletal muscle" = "#a6761d",
+  "testis"          = "#666666",
+  "Other"           = "grey80"
+)
 
-umap_hd_full <- hd_umap(dat = umap_data_full |> 
-          select(Ensembl, Tissue, nTPM) |> 
-          pivot_wider(names_from = Ensembl, values_from = nTPM),
-        by_sample = FALSE,
-        impute = TRUE,
-        components = 2,
-        seed = 123)
-
-umap_full <- umap_hd_full$umap_res |>
-  rename(Ensembl = Features) |>
-  inner_join(hpa_data |> distinct(Ensembl, .keep_all = TRUE), by = "Ensembl")
-```
-
-```{r}
-p_umap_full <- ggplot(umap_full |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `RNA tissue specificity`, shape = `HPA evidence`)) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_brewer(palette = "Set1") +
-  scale_shape_manual(values = c(16, 17, 18, 15)) + # Circle, Triangle, Square, Diamond
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-p_umap_full
-
-#ggsave("../plots/png/Figure 2/Figure 2F.pdf", p_umap, width = 8, height = 6, dpi = 300)
-#ggsave("../plots/png/Figure 2/Figure 2F.png", p_umap, width = 8, height = 6, dpi = 300)
-```
-
-
-```{r}
-p_umap_full <- ggplot(umap_full |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `HPA evidence`, shape = `RNA tissue specificity`)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-p_umap_full
-```
-
-```{r}
-max_tissue_per_gene_full <- umap_full %>% 
-  # your big tibble
-  group_by(Ensembl) %>%          # group by gene (you can drop Gene_name if you don’t need it)
-  slice_max(nTPM, with_ties = FALSE) %>%    # take the single row with highest nTPM
+# prepare your “max tissue” per gene:
+max_tissue_per_gene <- umap %>% 
+  group_by(Ensembl) %>% 
+  slice_max(nTPM, with_ties = FALSE) %>% 
   ungroup() %>% 
   select(Ensembl, Tissue, nTPM) %>% 
   rename(
     `Max tissue` = Tissue,
     `Max nTPM`   = nTPM
+  ) %>% 
+  # collapse “other” tissues into one factor level:
+  mutate(
+    Tissue_group = if_else(
+      `Max tissue` %in% highlighted,
+      `Max tissue`,
+      "Other"
+    ) %>% 
+      # make it a factor, with "Other" last
+      factor(levels = c(highlighted, "Other"))
   )
 
-p_umap_full <- ggplot(umap_full |> distinct(Ensembl, .keep_all = TRUE) |>
-                   inner_join(max_tissue_per_gene_full, by = "Ensembl"), 
-                 aes(x = UMAP1, y = UMAP2, color = `Max tissue`, shape = `HPA evidence`)) +
+# now join and plot
+p_umap <- umap %>% 
+  distinct(Ensembl, .keep_all = TRUE) %>% 
+  inner_join(max_tissue_per_gene, by = "Ensembl") %>% 
+  ggplot(aes(
+    x = UMAP1, 
+    y = UMAP2, 
+    color = Tissue_group,
+    shape = `HPA evidence`
+  )) +
   geom_point(size = 2, alpha = 0.7) +
+  scale_color_manual(
+    # supply your 8 colours, + grey for “Other”
+    values = c(tissue_colours, Other = "grey80"),
+    name   = "Max tissue"
+  ) +
   labs(
     title = "UMAP of HPA Contributing Genes",
     x = "UMAP1",
     y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
+    shape = "HPA evidence"
   ) +
   theme_minimal(base_size = 14) +
   theme(
@@ -755,17 +710,25 @@ p_umap_full <- ggplot(umap_full |> distinct(Ensembl, .keep_all = TRUE) |>
     plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
   )
 
-p_umap_full
-
-max_tissue_per_gene_full |>
-  # count max tissue
-  count(`Max tissue`, name = "Number of genes") |>
-  arrange(desc(`Number of genes`))
+print(p_umap)
 ```
+
 
 # Supplementary
 
 ## HPA contributing genes
+
+```{r}
+# Seek overlapping Ensembl from multi_target_data and hpa_contributing_genes
+hpa_contributing_genes |>
+  select(-Gene) |>
+  full_join(multi_target_data |> select(-Gene) |> mutate(multi_target = "Multi target"), by = "Ensembl") |>
+  filter(!is.na(Dataset)) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene), by = "Ensembl") |>
+  select(Ensembl, Gene, `HPA evidence`, `Uniprot evidence`, `Evidence annotation (transcript)`, `Evidence annotation (protein)`, multi_target, `RNA tissue specificity`) |>
+  write_xlsx("../tables/Figure 3/HPA contributing genes v.25.xlsx")
+```
+
 
 ```{r}
  hpa_data %>%
