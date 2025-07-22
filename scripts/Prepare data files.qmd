@@ -1,0 +1,271 @@
+---
+title: "Prepare data files"
+format: html
+---
+
+# Load libraries
+
+```{r}
+library(tidyverse)
+```
+
+# Load data
+
+## Ensembl v.109
+
+Dataframe containing Ensembl gene ID, the version it was part of and which chromosome it was determined to be on. The data is gathered from the Ensembl website, and the version goes from v.32 to v.109.
+
+```{r}
+ensembl_data_v109 <- read_csv("../data/Ensembl/ensembl_data_v32_v109.csv")
+ensembl_data_v109 <- rename(Ensembl = ensg_id)
+head(ensembl_data_v109)
+```
+
+## HPA v.24
+
+The HPA v.24 file is gathered from the `www.proteinatlas.org` website, where most boxes were ticked in to get the most comprehensive data. The file contains information on RNA and protein evidence for each gene, including tissue, brain, cell type, immune cell type, and cell line data, and more.
+
+```{r}
+hpa_data_v24 <- read_csv("../data/HPA v.24/hpa_data_v24.csv")
+```
+
+## HPA v.25
+
+Here we are preparing the updated HPA version 25 data with the latest RNA and protein evidence.
+
+RNA: Included the maximum nTPM values for tissue, brain, cell type, immune cell type, and cell line data.
+Protein: Only contains "Enhanced" & "Supported" evidence levels from immunoflorescence, immunohistochemistry, and western blot.
+
+### RNA (update)
+
+We are considering RNA evidence if >= 1 nTPM is present in the dataset. The datasets are tissue, brain, cell type, immune cell type, and cell line.
+
+```{r}
+# RNA bulk
+
+## Tissue
+tissue_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_tissue_consensus.tsv")
+head(tissue_data)
+
+tissue_evidence <- tissue_data |>
+  group_by(Gene) |>
+  summarise(max_ntpm = max(nTPM)) |>
+  mutate(Evidence_type = ifelse(max_ntpm >= 1, "Tissue evidence", "No tissue evidence")) |>
+  mutate(Dataset = "Tissue") |>
+  rename(Ensembl = Gene)
+head(tissue_evidence)
+
+## Brain
+brain_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_brain_region_hpa.tsv")
+head(brain_data)
+
+brain_evidence <- brain_data |>
+  group_by(Gene) |>
+  summarise(max_ntpm = max(nTPM)) |>
+  mutate(Evidence_type = ifelse(max_ntpm >= 1, "Brain evidence", "No brain evidence")) |>
+  mutate(Dataset = "Brain") |>
+  rename(Ensembl = Gene)
+head(brain_evidence)
+
+# Single-cell
+
+## Cell-type
+cell_type_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_single_cell_cluster.tsv")
+head(cell_type_data)
+
+cell_type_evidence <- cell_type_data |>
+  group_by(Gene) |>
+  summarise(max_ntpm = max(nTPM)) |>
+  mutate(Evidence_type = ifelse(max_ntpm >= 1, "Cell type evidence", "No cell type evidence")) |>
+  mutate(Dataset = "Cell type") |>
+  rename(Ensembl = Gene)
+head(cell_type_evidence)
+
+## Immune cell type
+immune_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_immune_cell.tsv")
+head(immune_data)
+
+immune_cell_type_evidence <- immune_data |>
+  group_by(Gene) |>
+  summarise(max_ntpm = max(nTPM)) |>
+  mutate(Evidence_type = ifelse(max_ntpm >= 1, "Immune cell type evidence", "No immune cell type evidence")) |>
+  mutate(Dataset = "Immune cell type") |>
+  rename(Ensembl = Gene)
+head(immune_cell_type_evidence)
+
+# Cell line
+cell_line_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_celline.tsv")
+head(cell_line_data)
+
+cell_line_evidence <- cell_line_data |>
+  group_by(Gene) |>
+  summarise(max_ntpm = max(nTPM)) |>
+  mutate(Evidence_type = ifelse(max_ntpm >= 1, "Cell line evidence", "No cell line evidence")) |>
+  mutate(Dataset = "Cell line") |>
+  rename(Ensembl = Gene)
+head(cell_line_evidence)
+```
+
+### Protein (update)
+
+Currently we get the antibody reliability scores from the HPA v.24 file, but we will update this to the v.25 file in the future.
+
+```{r}
+# Protein-level corrections
+## Remove protein-level evidence for genes that have only multi-target antibodies
+multi_target_data <- read_tsv("../data/HPA v.25/datasets/Protein/genes_with_only_multitarget_abs.txt")
+multi_target_data <- multi_target_data |> rename(Ensembl = ensg_id, Gene = display_name)
+head(multi_target_data)
+
+# Antibody-based evidence
+
+## Western blot (WB)
+wb_data <- read_delim("../data/HPA v.25/datasets/Protein/wb_scores.txt", delim = "\t", col_names = TRUE, show_col_types = FALSE)
+wb_data <- wb_data |> rename(Ensembl = ensembl_gene_id, Gene = gene_name, `Reliability (WB)` = score_group_name) |> select(Ensembl, Gene, `Reliability (WB)`)
+head(wb_data)
+
+# Western blot as a long-format evidence block
+wb_evidence <- wb_data %>%
+  # Supported genes give Western blot evidence
+  mutate(Evidence_type = ifelse(`Reliability (WB)` == "Supported", "Western blot evidence", "No western blot evidence")) %>%
+  mutate(Dataset = "Western blot") %>%
+  # Change Evidence column to "No western blot evidence" for genes with only multi-target antibodies
+  mutate(Evidence_type = ifelse(Ensembl %in% multi_target_data$Ensembl, "No western blot evidence", Evidence_type)) |> # Remove Multi-target assays to have evidence
+  mutate(`Evidence annotation` = "Evidence on protein-level") |>
+  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+
+## Immunofluorescence (IF)
+if_data <- read_csv("data/hpa_data_v24.csv") 
+  
+if_evidence <- if_data |>
+  # Supported and Enhanced status give immunofluorescence evidence
+  mutate(Evidence = ifelse(`Reliability (IF)` %in% c("Enhanced", "Supported"), "Immunofluorescence evidence", "No immunofluorescence evidence")) |>
+  mutate(Dataset = "Immunofluorescence") |>
+  # Change Evidence column to "No immunofluorescence evidence" for genes with only multi-target antibodies
+  mutate(Evidence = ifelse(Ensembl %in% multi_target_data$ensg_id, "No immunofluorescence evidence", Evidence)) |>
+  mutate(`Evidence annotation` = "Evidence on protein-level") |>
+  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+
+## Immunohistochemistry (IHC)
+ihc_data <- read_csv("data/hpa_data_v24.csv")
+
+ihc_evidence <- ihc_data |>
+  # Supported and Enhanced status give immunohistochemistry evidence
+  mutate(Evidence = ifelse(`Reliability (IH)` %in% c("Enhanced", "Supported"), "Immunohistochemistry evidence", "No immunohistochemistry evidence")) |>
+  mutate(Dataset = "Immunohistochemistry") |>
+  # Change Evidence column to "No immunohistochemistry evidence" for genes with only multi-target antibodies
+  mutate(Evidence = ifelse(Ensembl %in% multi_target_data$ensg_id, "No immunohistochemistry evidence", Evidence)) |>
+  mutate(`Evidence annotation` = "Evidence on protein-level") |>
+  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+```
+
+## Combine RNA and protein evidence
+
+We are also adding information from the HPA v.24 file to the new v.25 file.
+
+```{r}
+# Define which datasets are RNA and which are protein
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Cell line", "Immune cell type")
+protein_datasets <- c("Western blot", "Immunofluorescence", "Immunohistochemistry")
+
+# Step 1: Combine as before
+hpa_evidence_v25 <- bind_rows(
+  tissue_evidence,
+  cell_type_evidence,
+  immune_cell_type_evidence,
+  brain_evidence,
+  cell_line_evidence,
+  wb_evidence,
+  if_evidence,
+  ihc_evidence
+) %>%
+  arrange(Ensembl) %>%
+  right_join(
+    hpa_data_v24 %>% select(Ensembl, Gene, `Gene synonym`,  Uniprot, Chromosome, Position, `Protein class`, `Biological process`, `Molecular function`),
+    by = "Ensembl"
+  )
+
+# Step 2: Summarize evidence for each Ensembl gene (RNA and protein separately)
+summary_evidence <- hpa_evidence_v25 %>%
+  group_by(Ensembl) %>%
+  summarise(
+    # Transcript/RNA-level evidence
+    RNA_evidence = any(
+      Dataset %in% rna_datasets & grepl("evidence$", Evidence) & !grepl("^No ", Evidence)
+    ),
+    # Protein-level evidence
+    Protein_evidence = any(
+      Dataset %in% protein_datasets & grepl("evidence$", Evidence) & !grepl("^No ", Evidence)
+    ),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence on transcript-level", "No evidence"),
+    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence on protein-level", "No evidence")
+  )
+
+# Step 3: Join the two new annotation columns back to the main table
+hpa_evidence_v25 <- hpa_evidence_v25 %>%
+  left_join(
+    summary_evidence %>% select(Ensembl, `Evidence annotation (transcript)`, `Evidence annotation (protein)`),
+    by = "Ensembl"
+  )
+
+# Example: Count unique Ensembl genes for each combination of annotations
+hpa_evidence_v25 %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  count(`Evidence annotation (transcript)`, `Evidence annotation (protein)`)
+
+# Filter for those Ensembl that have Evidenc eon protein-level byt not on transcript level
+hpa_evidence_v25 %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  filter(`Evidence annotation (transcript)` == "No evidence" & `Evidence annotation (protein)` == "Evidence on protein-level") |>
+  inner_join(hpa_data_v24 %>% select(Ensembl, Gene), by = "Ensembl")
+```
+
+## UniProt v.24
+
+```{r}
+uniprot_data_v24 <- read_tsv("data/uniprot/HPAv24_uniprot_pe1_5.txt")
+```
+
+# Write data to CSV
+
+## Ensembl v.109
+
+```{r}
+write_csv(ensembl_data_v109, "data/ensembl_data_v109.csv")
+```
+
+## HPA evidence v.24
+
+```{r}
+write_csv(hpa_data_v24, "data/hpa_data_v24.csv")
+```
+
+
+## HPA evidence v.25
+
+```{r}
+write_csv(hpa_evidence_v25, "data/hpa_evidence_v25.csv")
+```
+
+### Western Blot
+
+```{r}
+write_csv(wb_data, "data/wb_data.csv")
+```
+
+## UniProt v.25_03
+
+```{r}
+
+```
+
+# sessionInfo
+
+```{r}
+sessionInfo()
+```
+
+End of Quarto file.
