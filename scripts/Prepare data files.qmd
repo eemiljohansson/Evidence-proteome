@@ -21,6 +21,38 @@ ensembl_data_v109 <- rename(Ensembl = ensg_id)
 head(ensembl_data_v109)
 ```
 
+## UniProt v.24
+
+
+
+```{r}
+uniprot_data_v24 <- read_tsv("../data/UniProt/HPAv24_uniprot_pe1_5.txt")
+head(uniprot_data_v24)
+
+uniprot_data_v24 <- uniprot_data_v24 |> rename(Ensembl = ensg_id, Gene = display_name, UniProt = uniprot_id, UniProt_evidence = name) |>
+  # Remove "UniProt - " Prefix from UniProt_evidence
+  mutate(UniProt_evidence = str_remove(UniProt_evidence, "UniProt - ")) |>
+  mutate(UniProt_evidence = case_when(UniProt_evidence == "Evidence at protein level" ~ "PE1: Evidence at protein level",
+                                      UniProt_evidence == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
+                                      UniProt_evidence == "Uncertain" ~ "PE3: Uncertain evidence",
+                                      UniProt_evidence == "Inferred from homology" ~ "PE4: Inferred from homology",
+                                      UniProt_evidence == "Predicted" ~ "PE5: Predicted evidence",
+                                      TRUE ~ NA_character_)) |>
+  distinct(Ensembl, .keep_all = TRUE) |> # Keep only the unique Ensembl genes
+  select(Ensembl, Gene, UniProt, UniProt_evidence) |>
+  mutate(Evidence_type = case_when(
+    UniProt_evidence == "PE1: Evidence at protein level" ~ "UniProt evidence",
+    UniProt_evidence == "PE2: Evidence at transcript level" ~ "UniProt evidence",
+    UniProt_evidence == "PE3: Uncertain evidence" ~ "No UniProt evidence",
+    UniProt_evidence == "PE4: Inferred from homology" ~ "No UniProt evidence",
+    UniProt_evidence == "PE5: Predicted evidence" ~ "No UniProt evidence",
+    TRUE ~ NA_character_
+  )) |>
+  mutate(Dataset = "UniProt")
+  
+head(uniprot_data_v24)
+```
+
 ## HPA v.24
 
 The HPA v.24 file is gathered from the `www.proteinatlas.org` website, where most boxes were ticked in to get the most comprehensive data. The file contains information on RNA and protein evidence for each gene, including tissue, brain, cell type, immune cell type, and cell line data, and more.
@@ -171,13 +203,15 @@ We are also adding information from the HPA v.24 file to the new v.25 file.
 * Gene synonym information (v.24)
 * Biological and functional annotation (GO + protein class) (v.24)
 
+### Without annotations
+
 ```{r}
 # Define which datasets are RNA and which are protein
 rna_datasets <- c("Tissue", "Brain", "Cell type", "Cell line", "Immune cell type")
 protein_datasets <- c("Western blot", "Immunofluorescence", "Immunohistochemistry")
 
 # Step 1: Combine as before
-hpa_evidence_v25 <- bind_rows(
+hpa_evidence_v25_long <- bind_rows(
   tissue_evidence,
   cell_type_evidence,
   immune_cell_type_evidence,
@@ -186,7 +220,13 @@ hpa_evidence_v25 <- bind_rows(
   wb_evidence,
   if_evidence,
   ihc_evidence
-) %>%
+) 
+```
+
+### With annotations
+
+```{r}
+%>%
   arrange(Ensembl) %>%
   right_join(
     hpa_data_v24 %>% select(Ensembl, Gene, `Gene synonym`,  Uniprot, Chromosome, Position, `Protein class`, `Biological process`, `Molecular function`),
@@ -213,7 +253,7 @@ summary_evidence <- hpa_evidence_v25 %>%
   )
 
 # Step 3: Join the two new annotation columns back to the main table
-hpa_evidence_v25 <- hpa_evidence_v25 %>%
+hpa_evidence_v25_long <- hpa_evidence_v25 %>%
   left_join(
     summary_evidence %>% select(Ensembl, `Evidence annotation (transcript)`, `Evidence annotation (protein)`),
     by = "Ensembl"
@@ -231,38 +271,18 @@ hpa_evidence_v25 %>%
   inner_join(hpa_data_v24 %>% select(Ensembl, Gene), by = "Ensembl")
 ```
 
-## UniProt v.24
 
-```{r}
-uniprot_data_v24 <- read_tsv("data/uniprot/HPAv24_uniprot_pe1_5.txt")
-```
 
 # Write data to CSV
 
-## Ensembl v.109
+## Evidence annotation v.25
 
 ```{r}
-write_csv(ensembl_data_v109, "data/ensembl_data_v109.csv")
-```
 
-## HPA evidence v.24
-
-```{r}
-write_csv(hpa_data_v24, "data/hpa_data_v24.csv")
 ```
 
 
-## HPA evidence v.25
 
-```{r}
-write_csv(hpa_evidence_v25, "data/hpa_evidence_v25.csv")
-```
-
-### Western Blot
-
-```{r}
-write_csv(wb_data, "data/wb_data.csv")
-```
 
 ## UniProt v.25_03
 
