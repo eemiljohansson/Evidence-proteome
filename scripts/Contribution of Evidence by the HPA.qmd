@@ -9,83 +9,95 @@ format: html
 library(tidyverse)
 library(ggalluvial)
 library(RColorBrewer)
+library(eulerr)
 ```
 
 # Load data
 
 ```{r}
 #hpa_data_v25 <- read_csv("data/hpa_evidence_v25.csv")
-hpa_data <- read_csv("../data/HPA v.24/hpa_data_v24.csv")
+hpa_data <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
 head(hpa_data)
 
 tissue_data <- read_tsv("../data/HPA v.24/rna_tissue_consensus.tsv")
+head(tissue_data)
 
-uniprot_info <- read_tsv("../data/UniProt/uniprot_mapping_2025_05_26.tsv")
-head(uniprot_info)
+uniprot_data <- read_csv("../data/HPA v.25/uniprot_v24.csv")
+head(uniprot_data)
+```
+
+# Themes
+
+```{r}
+hpa_colors <- c(
+  "Evidence at protein level"    = "darkgreen",
+  "Evidence at transcript level" = "darkorange",
+  "No evidence"                  = "firebrick"
+)
+
+uniprot_colors <- c(
+  "Experimental evidence at protein level (PE1)"    = "darkgreen",
+  "Experimental evidence at transcript level (PE2)" = "darkorange",
+  "Protein inferred from homology (PE3)"            = "#cccccc", 
+  "Protein predicted (PE4)"                         = "#888888", 
+  "Protein uncertain (PE5)"                         = "#444444",  
+  "No evidence"                                     = "firebrick"
+)
+```
+
+# Levels
+
+```{r}
+uniprot_levels <- c(
+  "No evidence",
+  "Protein uncertain (PE5)",
+  "Protein predicted (PE4)",
+  "Protein inferred from homology (PE3)",
+  "Experimental evidence at transcript level (PE2)",
+  "Experimental evidence at protein level (PE1)"
+)
+
+hpa_levels <- c("Evidence at protein level",
+                "Evidence at transcript level",
+                "No evidence")
+
+# Reverse hpa_levels
+hpa_levels <- rev(hpa_levels)
+```
+
+# Customization
+
+```{r}
+select <- dplyr::select
 ```
 
 # Plots
 
 ## Sankey: Comparing HPA and UniProt evidence
 
-```{r, fig.width = 10, fig.height = 10}
+```{r}
 # Step 1: Prepare categorized evidence for Sankey plot
 sankey_data <- hpa_data %>%
-  dplyr::select(Ensembl, Uniprot, `HPA evidence`) %>%
-  full_join(uniprot_info %>% dplyr::select(Entry, `Protein existence`), by = c("Uniprot" = "Entry")) %>%
-  # Switch UniProt evidence for Protein existence
-  dplyr::rename(`UniProt evidence` = `Protein existence`) %>%
-  mutate(
-    HPA = dplyr::case_when(
-      is.na(`HPA evidence`) ~ "NA",
-      TRUE ~ `HPA evidence`
-    ),
-    UniProt = dplyr::case_when(
-      is.na(`UniProt evidence`) ~ "NA",
-      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
-      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
-      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
-      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
-      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
-      TRUE ~ `UniProt evidence`
-    )
-  ) %>%
-  filter(HPA != "NA") |>
-  count(HPA, UniProt, name = "Freq")
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
+  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No evidence",
+                                               TRUE ~ `Uniprot evidence`))  |>
+  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
 
-# Step 2: Define colors for each evidence category
-hpa_colors <- c(
-  "Evidence at protein level" = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No human protein/transcript evidence" = "firebrick",
-  "NA" = "#999999"
-)
-uniprot_colors <- c(
-  "PE1: Evidence at protein level" = "darkgreen",
-  "PE2: Evidence at transcript level" = "darkorange",
-  "PE3: Inferred from homology" = "#cccccc",  # light gray
-  "PE4: Predicted"              = "#888888",  # medium gray
-  "PE5: Uncertain"              = "#444444",  # dark gray
-  "NA"                          = "#111111"   # almost black
-)
 # Combine for scale
 evidence_colors <- c(hpa_colors, uniprot_colors)
-
-# Step 3: Plot Sankey with coloring by HPA category (flows) and by stratum (bar)
 
 # After count() step
 sankey_data <- sankey_data %>%
   mutate(
-    UniProt = factor(
-      UniProt,
-      levels = c("PE1: Evidence at protein level", "PE2: Evidence at transcript level", "PE3: Inferred from homology", "PE4: Predicted", "PE5: Uncertain", "NA")
-    )
+    `HPA evidence`     = factor(`HPA evidence`, levels = hpa_levels),
+    `Uniprot evidence` = factor(`Uniprot evidence`, levels = uniprot_levels)
   )
 
 # Calculate label with count for HPA and UniProt
 sankey_data_label <- sankey_data %>%
   tidyr::pivot_longer(
-    cols = c(HPA, UniProt),
+    cols = c(`HPA evidence`, `Uniprot evidence`),
     names_to = "axis",
     values_to = "stratum"
   ) %>%
@@ -95,9 +107,15 @@ sankey_data_label <- sankey_data %>%
 
 # Sankey plot
 ggplot(sankey_data,
-       aes(axis1 = HPA, axis2 = UniProt, y = Freq)) +
-  geom_alluvium(aes(fill = HPA), width = 0.4, alpha = 0.8, color = "black", size = 0.2) +
-  geom_stratum(aes(fill = after_stat(stratum)), width = 0.5, color = "black") +
+       aes(axis1 = `HPA evidence`,
+           axis2 = `Uniprot evidence`,
+           y     = Freq)) +
+  geom_alluvium(aes(fill = `HPA evidence`), width = 0.4, alpha = 0.8,
+                color = "black", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5,
+               color = "black"
+  )  +
   # Custom labels with count below the stratum name
   geom_text(
     stat = "stratum",
@@ -119,10 +137,14 @@ ggplot(sankey_data,
     y = "Number of Genes",
     fill = "Evidence Category"
   ) +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  # legend at top
+  theme(
+    legend.position = "top"
+  )
 
-ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 10, height = 10, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3A.png", width = 10, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 20, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 20, dpi = 300)
 ```
 
 ## Sankey: Highlighting only genes that have no UniProt evidence
@@ -130,64 +152,38 @@ ggsave("../plots/png/Figure 3/Figure 3A.png", width = 10, height = 10, dpi = 300
 ```{r, fig.width = 10, fig.height = 7}
 # Prepare data for Sankey
 sankey_data <- hpa_data %>%
-  select(Ensembl, Uniprot, `HPA evidence`) %>%
-  full_join(
-    uniprot_info %>% select(Entry, `Protein existence`),
-    by = c("Uniprot" = "Entry")
-  ) %>%
-  rename(`UniProt evidence` = `Protein existence`) %>%
-  mutate(
-    HPA = case_when(
-      is.na(`HPA evidence`) ~ "NA",
-      TRUE ~ `HPA evidence`
-    ),
-    UniProt = case_when(
-      is.na(`UniProt evidence`) ~ "NA",
-      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
-      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
-      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
-      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
-      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
-      TRUE ~ `UniProt evidence`
-    )
-  ) %>%
-  filter(
-    UniProt %in% c(
-      "PE3: Inferred from homology",
-      "PE4: Predicted",
-      "PE5: Uncertain",
-      "NA"
-    )
-  ) %>%
-  filter(HPA != "NA") %>%
-  filter(HPA != "No human protein/transcript evidence") %>%
-  count(HPA, UniProt, name = "Freq")
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
+  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No evidence",
+                                               TRUE ~ `Uniprot evidence`)) |>
+  filter(`Uniprot evidence` %in% c("No evidence", "Protein uncertain (PE5)", "Protein predicted (PE4)", "Protein inferred from homology (PE3)")) |>
+  filter(`HPA evidence` != "No evidence") %>%
+  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
 
 # Set color palettes
 hpa_colors <- c(
   "Evidence at protein level" = "darkgreen",
   "Evidence at transcript level" = "darkorange",
-  "No human protein/transcript evidence" = "firebrick",
-  "NA" = "#999999"
+  "No evidence" = "firebrick"
 )
 uniprot_colors <- c(
-  "PE3: Inferred from homology" = "#cccccc",
-  "PE4: Predicted"              = "#888888",
-  "PE5: Uncertain"              = "#444444",
-  "NA"                          = "#111111"
+  "Protein inferred from homology (PE3)" = "#cccccc",
+  "Protein predicted (PE4)"              = "#888888",
+  "Protein uncertain (PE5)"              = "#444444",
+  "No evidence"                          = "#111111"
 )
 evidence_colors <- c(hpa_colors, uniprot_colors)
 
 # Order UniProt factor levels for better plotting
 sankey_data <- sankey_data %>%
   mutate(
-    UniProt = factor(
-      UniProt,
+    `Uniprot evidence` = factor(
+      `Uniprot evidence`,
       levels = c(
-        "PE3: Inferred from homology",
-        "PE4: Predicted",
-        "PE5: Uncertain",
-        "NA"
+        "Protein inferred from homology (PE3)",
+        "Protein predicted (PE4)",
+        "Protein uncertain (PE5)",
+        "No evidence" 
       )
     )
   )
@@ -196,12 +192,12 @@ total_genes <- sum(sankey_data$Freq)
 
 ggplot(sankey_data,
        aes(
-         axis1 = UniProt,
-         axis2 = HPA,
+         axis1 = `Uniprot evidence`,
+         axis2 = `HPA evidence`,
          y     = Freq
        )
 ) +
-  geom_alluvium(aes(fill = HPA),
+  geom_alluvium(aes(fill = `Uniprot evidence`),
                 width = 0.4, alpha = 0.8,
                 color = "black", size = 0.2) +
   geom_stratum(aes(fill = after_stat(stratum)),
@@ -233,7 +229,102 @@ ggsave("../plots/png/Figure 3/Figure 3B.png", width = 10, height = 7, dpi = 300)
 ### Venn: Protein level evidence
 
 ```{r}
+# 1) identify your “contributing” proteins
+hpa_contributing_proteins <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) %>%
+  mutate(
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+  ) %>%
+  filter(
+    `Uniprot evidence` %in% c(
+      "No evidence",
+      "Protein uncertain (PE5)",
+      "Protein predicted (PE4)",
+      "Protein inferred from homology (PE3)"
+    ),
+    `HPA evidence` == "Evidence at protein level"
+  ) %>%
+  pull(Ensembl)
 
+# 2) extract the three sets of Ensembl IDs
+wf    <- hpa_data %>%
+  filter(
+    Ensembl %in% hpa_contributing_proteins,
+    Dataset == "Western blot",
+    Evidence_type == "Western blot evidence"
+  ) %>%
+  pull(Ensembl) %>% unique()
+
+ifluo <- hpa_data %>%
+  filter(
+    Ensembl %in% hpa_contributing_proteins,
+    Dataset == "Immunofluorescence",
+    Evidence_type == "Immunofluorescence evidence"
+  ) %>%
+  pull(Ensembl) %>% unique()
+
+ihc   <- hpa_data %>%
+  filter(
+    Ensembl %in% hpa_contributing_proteins,
+    Dataset == "Immunohistochemistry",
+    Evidence_type == "Immunohistochemistry evidence"
+  ) %>%
+  pull(Ensembl) %>% unique()
+
+# 3) build a named list for eulerr
+venn_data <- list(
+  `Western blot`          = wf,
+  `Immunofluorescence`    = ifluo,
+  `Immunohistochemistry`  = ihc
+)
+
+# check sizes
+print(length(wf))
+print(length(ifluo))
+print(length(ihc))
+
+# optional: see the intersection of all three
+common_all <- Reduce(intersect, venn_data)
+print(common_all)
+
+# 4) fit & plot
+venn_fit <- euler(venn_data)
+
+venn_plot <- plot(
+  venn_fit,
+  fills      = list(
+    `Western blot`         = "#75B2E9",
+    `Immunofluorescence`   = "#FE625E",
+    `Immunohistochemistry` = "#E8BCAD"
+  ),
+  quantities = TRUE,
+  labels     = TRUE,
+  main       = "HPA Protein‐Level Evidence Venn"
+)
+
+# PDF
+ggsave(
+  filename = "../plots/pdf/Figure 3/Figure 3C.pdf",
+  plot     = venn_plot, 
+  width    = 8, 
+  height   = 6, 
+  dpi      = 300,
+  device   = cairo_pdf     # use cairo if you need embedded fonts
+)
+
+# PNG
+ggsave(
+  filename = "../plots/png/Figure 3/Figure 3C.png",
+  plot     = venn_plot,
+  width    = 8,
+  height   = 6,
+  dpi      = 300,
+  device   = "png"
+)
 ```
 
 ### Upset: Transcript level evidence

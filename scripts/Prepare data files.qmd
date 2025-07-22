@@ -29,23 +29,23 @@ head(ensembl_data_v109)
 uniprot_data_v24 <- read_tsv("../data/UniProt/HPAv24_uniprot_pe1_5.txt")
 head(uniprot_data_v24)
 
-uniprot_data_v24 <- uniprot_data_v24 |> rename(Ensembl = ensg_id, Gene = display_name, UniProt = uniprot_id, UniProt_evidence = name) |>
-  # Remove "UniProt - " Prefix from UniProt_evidence
-  mutate(UniProt_evidence = str_remove(UniProt_evidence, "UniProt - ")) |>
-  mutate(UniProt_evidence = case_when(UniProt_evidence == "Evidence at protein level" ~ "PE1: Evidence at protein level",
-                                      UniProt_evidence == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
-                                      UniProt_evidence == "Uncertain" ~ "PE3: Uncertain evidence",
-                                      UniProt_evidence == "Inferred from homology" ~ "PE4: Inferred from homology",
-                                      UniProt_evidence == "Predicted" ~ "PE5: Predicted evidence",
-                                      TRUE ~ NA_character_)) |>
+uniprot_data_v24 <- uniprot_data_v24 |> rename(Ensembl = ensg_id, Gene = display_name, UniProt = uniprot_id, `Uniprot evidence` = name) |>
+  # Remove "UniProt - " Prefix from `Uniprot evidence`
+  mutate(`Uniprot evidence` = str_remove(`Uniprot evidence`, "UniProt - ")) |>
+  mutate(`Uniprot evidence` = case_when(`Uniprot evidence` == "Evidence at protein level" ~ "Experimental evidence at protein level (PE1)",
+                                      `Uniprot evidence` == "Evidence at transcript level" ~ "Experimental evidence at transcript level (PE2)",
+                                      `Uniprot evidence` == "Inferred from homology" ~ "Protein inferred from homology (PE3)",
+                                      `Uniprot evidence` == "Predicted" ~ "Protein predicted (PE4)",
+                                      `Uniprot evidence` == "Uncertain" ~ "Protein uncertain (PE5)",
+                                      TRUE ~ "No evidence")) |>
   distinct(Ensembl, .keep_all = TRUE) |> # Keep only the unique Ensembl genes
-  select(Ensembl, Gene, UniProt, UniProt_evidence) |>
+  select(Ensembl, Gene, UniProt, `Uniprot evidence`) |>
   mutate(Evidence_type = case_when(
-    UniProt_evidence == "PE1: Evidence at protein level" ~ "UniProt evidence",
-    UniProt_evidence == "PE2: Evidence at transcript level" ~ "UniProt evidence",
-    UniProt_evidence == "PE3: Uncertain evidence" ~ "No UniProt evidence",
-    UniProt_evidence == "PE4: Inferred from homology" ~ "No UniProt evidence",
-    UniProt_evidence == "PE5: Predicted evidence" ~ "No UniProt evidence",
+    `Uniprot evidence` == "PE1: Evidence at protein level" ~ "UniProt evidence",
+    `Uniprot evidence` == "PE2: Evidence at transcript level" ~ "UniProt evidence",
+    `Uniprot evidence` == "PE3: Uncertain evidence" ~ "No UniProt evidence",
+    `Uniprot evidence` == "PE4: Inferred from homology" ~ "No UniProt evidence",
+    `Uniprot evidence` == "PE5: Predicted evidence" ~ "No UniProt evidence",
     TRUE ~ NA_character_
   )) |>
   mutate(Dataset = "UniProt")
@@ -237,8 +237,8 @@ summary_evidence <- hpa_evidence_v25 %>%
     .groups = "drop"
   ) %>%
   mutate(
-    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence on transcript level", "No evidence"),
-    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence on protein level", "No evidence")
+    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence at transcript level", "No evidence"),
+    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence at protein level", "No evidence")
   )
 
 # Step 3: Join the two new annotation columns back to the main table
@@ -249,9 +249,9 @@ hpa_evidence_v25 <- hpa_evidence_v25 %>%
   ) |>
   # Add column called `HPA evidence` that takes 
   mutate(`HPA evidence` = case_when(
-      `Evidence annotation (transcript)` == "Evidence on transcript level" & `Evidence annotation (protein)` == "Evidence on protein level" ~ "Evidence on protein level",
-      `Evidence annotation (transcript)` != "Evidence on transcript level" & `Evidence annotation (protein)` == "Evidence on protein level" ~ "Evidence on protein level",
-      `Evidence annotation (transcript)` == "Evidence on transcript level" & `Evidence annotation (protein)` != "Evidence on protein level" ~ "Evidence on transcript level",
+      `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
+      `Evidence annotation (transcript)` != "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
+      `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` != "Evidence at protein level" ~ "Evidence at transcript level",
       TRUE ~ "No evidence"
     ))
 # Example: Count unique Ensembl genes for each combination of annotations
@@ -270,6 +270,12 @@ hpa_evidence_v25 %>%
 
 ```{r}
 write_csv(hpa_evidence_v25, "../data/HPA v.25/hpa_evidence_v25.csv")
+```
+
+## Curated UniProt evidence
+
+```{r}
+write_csv(uniprot_data_v24, "../data/HPA v.25/uniprot_v24.csv")
 ```
 
 # sessionInfo
