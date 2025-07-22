@@ -130,38 +130,46 @@ wb_evidence <- wb_data %>%
   mutate(Evidence_type = ifelse(`Reliability (WB)` == "Supported", "Western blot evidence", "No western blot evidence")) %>%
   mutate(Dataset = "Western blot") %>%
   # Change Evidence column to "No western blot evidence" for genes with only multi-target antibodies
-  mutate(Evidence_type = ifelse(Ensembl %in% multi_target_data$Ensembl, "No western blot evidence", Evidence_type)) |> # Remove Multi-target assays to have evidence
-  mutate(`Evidence annotation` = "Evidence on protein-level") |>
-  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+  mutate(Evidence_type = ifelse(Ensembl %in% multi_target_data$Ensembl, "No western blot evidence", Evidence_type)) # Remove Multi-target assays to have evidence
+head(wb_evidence)
 
 ## Immunofluorescence (IF)
-if_data <- read_csv("data/hpa_data_v24.csv") 
+if_data <- read_tsv("../data/HPA v.25/datasets/Protein/subcellular_location_data.tsv") 
+head(if_data)
   
 if_evidence <- if_data |>
+  rename(Ensembl = Gene, Gene = `Gene name`, `Reliability (IF)` = Reliability) |>
+  select(Ensembl, Gene, `Reliability (IF)`) |>
   # Supported and Enhanced status give immunofluorescence evidence
-  mutate(Evidence = ifelse(`Reliability (IF)` %in% c("Enhanced", "Supported"), "Immunofluorescence evidence", "No immunofluorescence evidence")) |>
+  mutate(Evidence_type = ifelse(`Reliability (IF)` %in% c("Enhanced", "Supported"), "Immunofluorescence evidence", "No immunofluorescence evidence")) |>
   mutate(Dataset = "Immunofluorescence") |>
   # Change Evidence column to "No immunofluorescence evidence" for genes with only multi-target antibodies
-  mutate(Evidence = ifelse(Ensembl %in% multi_target_data$ensg_id, "No immunofluorescence evidence", Evidence)) |>
-  mutate(`Evidence annotation` = "Evidence on protein-level") |>
-  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+  mutate(Evidence_type = ifelse(Ensembl %in% multi_target_data$Ensembl, "No immunofluorescence evidence", Evidence_type))
+head(if_evidence)
 
 ## Immunohistochemistry (IHC)
-ihc_data <- read_csv("data/hpa_data_v24.csv")
+ihc_data <- read_tsv("../data/HPA v.25/datasets/Protein/normal_ihc_data.tsv")
+head(ihc_data)
 
 ihc_evidence <- ihc_data |>
+  rename(Ensembl = Gene, Gene = `Gene name`, `Reliability (IHC)` = Reliability) |>
+  select(Ensembl, Gene, `Reliability (IHC)`) |>
   # Supported and Enhanced status give immunohistochemistry evidence
-  mutate(Evidence = ifelse(`Reliability (IH)` %in% c("Enhanced", "Supported"), "Immunohistochemistry evidence", "No immunohistochemistry evidence")) |>
+  mutate(Evidence_type = ifelse(`Reliability (IHC)` %in% c("Enhanced", "Supported"), "Immunohistochemistry evidence", "No immunohistochemistry evidence")) |>
   mutate(Dataset = "Immunohistochemistry") |>
   # Change Evidence column to "No immunohistochemistry evidence" for genes with only multi-target antibodies
-  mutate(Evidence = ifelse(Ensembl %in% multi_target_data$ensg_id, "No immunohistochemistry evidence", Evidence)) |>
-  mutate(`Evidence annotation` = "Evidence on protein-level") |>
-  select(Ensembl, Evidence, Dataset, `Evidence annotation`)
+  mutate(Evidence_type = ifelse(Ensembl %in% multi_target_data$Ensembl, "No immunohistochemistry evidence", Evidence_type))
+head(ihc_evidence)
 ```
 
 ## Combine RNA and protein evidence
 
 We are also adding information from the HPA v.24 file to the new v.25 file.
+* Enrichment annotation (v.24)
+* UniProt mapping (v.24)
+* Chromosome and position information (v.24)
+* Gene synonym information (v.24)
+* Biological and functional annotation (GO + protein class) (v.24)
 
 ```{r}
 # Define which datasets are RNA and which are protein
