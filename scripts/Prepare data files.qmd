@@ -211,7 +211,7 @@ rna_datasets <- c("Tissue", "Brain", "Cell type", "Cell line", "Immune cell type
 protein_datasets <- c("Western blot", "Immunofluorescence", "Immunohistochemistry")
 
 # Step 1: Combine as before
-hpa_evidence_v25_long <- bind_rows(
+hpa_evidence_v25 <- bind_rows(
   tissue_evidence,
   cell_type_evidence,
   immune_cell_type_evidence,
@@ -221,17 +221,6 @@ hpa_evidence_v25_long <- bind_rows(
   if_evidence,
   ihc_evidence
 ) 
-```
-
-### With annotations
-
-```{r}
-%>%
-  arrange(Ensembl) %>%
-  right_join(
-    hpa_data_v24 %>% select(Ensembl, Gene, `Gene synonym`,  Uniprot, Chromosome, Position, `Protein class`, `Biological process`, `Molecular function`),
-    by = "Ensembl"
-  )
 
 # Step 2: Summarize evidence for each Ensembl gene (RNA and protein separately)
 summary_evidence <- hpa_evidence_v25 %>%
@@ -239,55 +228,48 @@ summary_evidence <- hpa_evidence_v25 %>%
   summarise(
     # Transcript/RNA-level evidence
     RNA_evidence = any(
-      Dataset %in% rna_datasets & grepl("evidence$", Evidence) & !grepl("^No ", Evidence)
+      Dataset %in% rna_datasets & grepl("evidence$", Evidence_type) & !grepl("^No ", Evidence_type)
     ),
     # Protein-level evidence
     Protein_evidence = any(
-      Dataset %in% protein_datasets & grepl("evidence$", Evidence) & !grepl("^No ", Evidence)
+      Dataset %in% protein_datasets & grepl("evidence$", Evidence_type) & !grepl("^No ", Evidence_type)
     ),
     .groups = "drop"
   ) %>%
   mutate(
-    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence on transcript-level", "No evidence"),
-    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence on protein-level", "No evidence")
+    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence on transcript level", "No evidence"),
+    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence on protein level", "No evidence")
   )
 
 # Step 3: Join the two new annotation columns back to the main table
-hpa_evidence_v25_long <- hpa_evidence_v25 %>%
+hpa_evidence_v25 <- hpa_evidence_v25 %>%
   left_join(
     summary_evidence %>% select(Ensembl, `Evidence annotation (transcript)`, `Evidence annotation (protein)`),
     by = "Ensembl"
-  )
-
+  ) |>
+  # Add column called `HPA evidence` that takes 
+  mutate(`HPA evidence` = case_when(
+      `Evidence annotation (transcript)` == "Evidence on transcript level" & `Evidence annotation (protein)` == "Evidence on protein level" ~ "Evidence on protein level",
+      `Evidence annotation (transcript)` != "Evidence on transcript level" & `Evidence annotation (protein)` == "Evidence on protein level" ~ "Evidence on protein level",
+      `Evidence annotation (transcript)` == "Evidence on transcript level" & `Evidence annotation (protein)` != "Evidence on protein level" ~ "Evidence on transcript level",
+      TRUE ~ "No evidence"
+    ))
 # Example: Count unique Ensembl genes for each combination of annotations
 hpa_evidence_v25 %>%
   distinct(Ensembl, .keep_all = TRUE) %>%
   count(`Evidence annotation (transcript)`, `Evidence annotation (protein)`)
 
-# Filter for those Ensembl that have Evidenc eon protein-level byt not on transcript level
 hpa_evidence_v25 %>%
   distinct(Ensembl, .keep_all = TRUE) %>%
-  filter(`Evidence annotation (transcript)` == "No evidence" & `Evidence annotation (protein)` == "Evidence on protein-level") |>
-  inner_join(hpa_data_v24 %>% select(Ensembl, Gene), by = "Ensembl")
+  count(`HPA evidence`)
 ```
-
-
 
 # Write data to CSV
 
-## Evidence annotation v.25
+## Evidence data v.25
 
 ```{r}
-
-```
-
-
-
-
-## UniProt v.25_03
-
-```{r}
-
+write_csv(hpa_evidence_v25, "../data/HPA v.25/hpa_evidence_v25.csv")
 ```
 
 # sessionInfo
