@@ -19,6 +19,8 @@ library(eulerr)
 hpa_data <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
 head(hpa_data)
 
+hpa_data_v24 <- read_csv("../data/HPA v.24/hpa_data_v24.csv")
+
 tissue_data <- read_tsv("../data/HPA v.24/rna_tissue_consensus.tsv")
 head(tissue_data)
 
@@ -330,13 +332,96 @@ ggsave(
 ### Upset: Transcript level evidence
 
 ```{r}
+# 1) identify your “contributing” proteins
+hpa_contributing_transcripts <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) %>%
+  mutate(
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+  ) %>%
+  filter(
+    `Uniprot evidence` %in% c(
+      "No evidence",
+      "Protein uncertain (PE5)",
+      "Protein predicted (PE4)",
+      "Protein inferred from homology (PE3)"
+    ),
+    `HPA evidence` == "Evidence at transcript level"
+  ) %>%
+  pull(Ensembl)
 
+# Define your protein evidence datasets
+protein_datasets <- c("Western blot", "Immunohistochemistry", "Immunofluorescence")
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
+
+# Filter and select
+upset_base <- hpa_data %>%
+  filter(Dataset %in% rna_datasets) %>%
+  filter(Ensembl %in% hpa_contributing_transcripts)
+  
+
+# Make a binary wide matrix: 1 if evidence in dataset, 0 otherwise
+upset_data <- upset_base %>%
+  distinct(Ensembl, Evidence_type) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = Evidence_type, values_from = value, values_fill = 0)
+
+set_order <- c("Tissue evidence", "Brain evidence", "Cell type evidence", "Immune cell type evidence", "Cell line evidence")
+# Reverse the order for plotting
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+upset_contributing_transcripts <- ComplexUpset::upset(
+  upset_data,
+  intersect = set_order,
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4
+      ) 
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over",
+)
+
+upset_contributing_transcripts
+
+ggsave("../plots/pdf/Figure 3/Figure 3D.pdf", width = 14, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3D.png", width = 14, height = 7, dpi = 300)
 ```
-
 
 ## Sankey: Tissue specificity
 
-```{r, fig.width = 10, fig.height = 7}
+```{r}
+# 1) identify your “contributing” proteins
+sankey_data <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) %>%
+  mutate(
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+  ) %>%
+  filter(
+    `Uniprot evidence` %in% c(
+      "No evidence",
+      "Protein uncertain (PE5)",
+      "Protein predicted (PE4)",
+      "Protein inferred from homology (PE3)"
+    ),
+    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
+  ) %>%
+  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
+  count(`HPA evidence`, `RNA tissue specificity`, name = "Freq")
+
 # ---- 1. Re-factor tissue specificity in the desired order ----
 desired_tissue_levels <- c(
   "Tissue enriched",
