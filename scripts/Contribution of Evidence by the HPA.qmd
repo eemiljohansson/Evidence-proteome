@@ -147,8 +147,8 @@ ggplot(sankey_data,
     legend.position = "top"
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 20, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 20, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 30, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 30, dpi = 300)
 ```
 
 ## Sankey: Highlighting only genes that have no UniProt evidence
@@ -508,79 +508,7 @@ ggsave("../plots/png/Figure 3/Figure 3E.png", p, width = 10, height = 7, dpi = 3
 ## Tissue
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(ggplot2)
 
-hpa_contributing_tissue_detected_genes <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
-    by = "Ensembl"
-  ) %>%
-  mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
-  ) %>%
-  filter(
-    `Uniprot evidence` %in% c(
-      "No evidence",
-      "Protein uncertain (PE5)",
-      "Protein predicted (PE4)",
-      "Protein inferred from homology (PE3)"
-    ),
-    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
-  ) %>%
-  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
-  filter(`RNA tissue specificity` != "Not detected")
-
-# 1. Filter to genes of interest
-hpa_data_filt <- hpa_data %>%
-  filter(Dataset == "Tissue") |>
-  filter(Ensembl %in% hpa_contributing_tissue_detected_genes$Ensembl)
-
-# 2. Expand the tissue/nTPM string into long format
-hpa_long_filt <- hpa_data_filt %>%
-  inner_join(
-    hpa_data_v24 |> select(Ensembl, `RNA tissue specific nTPM`),
-    by = "Ensembl"
-  ) %>%
-  filter(!is.na(`RNA tissue specific nTPM`)) %>%
-  mutate(
-    tissue_value = str_split(`RNA tissue specific nTPM`, ";")
-  ) %>%
-  unnest(tissue_value) %>%
-  mutate(
-    tissue_value = str_trim(tissue_value),
-    tissue = str_extract(tissue_value, "^[^:]+"),
-    nTPM = as.numeric(str_extract(tissue_value, "(?<=: )\\d+\\.?\\d*"))
-  )
-
-# 3. For each Ensembl, keep only the tissue with the max nTPM
-hpa_max_filt <- hpa_long_filt %>%
-  group_by(Ensembl) %>%
-  filter(nTPM == max(nTPM, na.rm = TRUE)) %>%
-  slice(1) %>%  # in case of ties
-  ungroup()
-
-# 4. Plot
-ggplot(hpa_max_filt, aes(x = tissue, fill = `HPA evidence`)) +
-  geom_bar(position = "stack") +
-  labs(
-    title = "Filtered genes: Number per tissue (by max nTPM), colored by HPA evidence",
-    x = "Tissue",
-    y = "Number of genes"
-  ) +
-  scale_fill_manual(
-    values = c(
-      "Evidence at protein level" = "darkgreen",
-      "Evidence at transcript level" = "darkorange"
-    )
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
 ```
 
 ## UMAP: 
@@ -652,8 +580,8 @@ p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y =
 
 p_umap
 
-#ggsave("../plots/png/Figure 2/Figure 2F.pdf", p_umap, width = 8, height = 6, dpi = 300)
-#ggsave("../plots/png/Figure 2/Figure 2F.png", p_umap, width = 8, height = 6, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3F.pdf", p_umap, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3F.png", p_umap, width = 10, height = 7, dpi = 300)
 ```
 
 #### HPA evidence
@@ -679,6 +607,9 @@ p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y =
   )
 
 p_umap
+
+ggsave("../plots/pdf/Figure 3/Figure 3G.pdf", p_umap, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3G.png", p_umap, width = 10, height = 7, dpi = 300)
 ```
 
 #### Max tissue
@@ -828,7 +759,7 @@ centers <- as.data.frame(clusters$centers) %>%
   mutate(Cluster = factor(1:nrow(.)))
 
 # --- 3) Plot with separate legends and override key --------------------------
-ggplot(plot_data, aes(x = UMAP1, y = UMAP2)) +
+p_umap_cluster <- ggplot(plot_data, aes(x = UMAP1, y = UMAP2)) +
   geom_point(
     aes(fill  = Cluster,
         shape = EvidenceType),
@@ -875,6 +806,10 @@ ggplot(plot_data, aes(x = UMAP1, y = UMAP2)) +
     panel.grid.minor = element_blank()
   )
 
+p_umap_cluster
+
+ggsave("../plots/pdf/Figure 3/Figure 3H.pdf", p_umap_cluster, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3H.png", p_umap_cluster, width = 10, height = 7, dpi = 300)
 ```
 
 ```{r}
@@ -961,6 +896,9 @@ ggplot(hpa_max_filt, aes(x = Max.tissue, fill = `HPA evidence`)) +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
+
+ggsave("../plots/pdf/Figure 3/Figure 3L.pdf", width = 24, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3L.png", width = 24, height = 10, dpi = 300)
 ```
 
 
@@ -1042,6 +980,8 @@ ggplot(plot_data2, aes(x = Cluster, fill = `Max tissue`)) +
     panel.grid.minor = element_blank()
   )
 
+ggsave("../plots/pdf/Figure 3/Figure 3I.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3I.png", width = 10, height = 7, dpi = 300)
 ```
 
 ```{r}
@@ -1072,6 +1012,9 @@ ggplot(plot_data2, aes(x = Cluster, fill = `Max tissue`)) +
     panel.grid.major = element_line(color = "grey90"),
     panel.grid.minor = element_blank()
   )
+
+ggsave("../plots/pdf/Figure 3/Figure 3J.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3J.png", width = 10, height = 7, dpi = 300)
 ```
 
 
@@ -1168,6 +1111,70 @@ ggplot(plot_data2, aes(x = Cluster, fill = EvidenceType)) +
 
 ```
 
+## Wordcloud
+
+```{r}
+library(treemapify)
+library(patchwork)
+
+filtered_hpa <- hpa_data_v24 |>
+  filter(Ensembl %in% hpa_contributing_genes$Ensembl)
+
+make_ggtreemap <- function(df, column, max_categories = 50, title = "Treemap") {
+  # Prepare and count
+  items <- df %>%
+    dplyr::pull({{ column }}) %>%
+    # split on comma only, then trim any extra whitespace
+    stringr::str_split(",") %>%
+    unlist() %>%
+    na.omit() %>%
+    stringr::str_trim() %>%
+    .[. != ""]
+  
+  tab <- as.data.frame(table(items))
+  tab <- tab %>% arrange(desc(Freq)) %>% head(max_categories)
+  
+  # Plot
+  ggplot(tab, aes(area = Freq, fill = items, label = items)) +
+    geom_treemap(show.legend = FALSE) +
+    geom_treemap_text(
+      colour    = "white",
+      place     = "center",
+      grow      = TRUE,
+      reflow    = TRUE,
+      min.size  = 3
+    ) +
+    labs(title = title) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
+    )
+}
+
+
+treemap_columns <- c(
+#  "Chromosome", 
+  "Protein class", 
+  "Biological process", 
+  "Molecular function", 
+  "Disease involvement", 
+  "Subcellular location", 
+  "Secretome location"
+)
+
+treemap_plots <- lapply(treemap_columns, function(col) {
+  make_ggtreemap(filtered_hpa, !!sym(col), title = col)
+})
+
+# You can control the number of rows/columns in the layout
+combined_plot <- wrap_plots(treemap_plots, ncol = 2)
+
+# Display
+print(combined_plot)
+
+# Save as PNG and PDF
+ggsave("../plots/pdf/Figure 3/Figure 3K.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3K.png", width = 10, height = 7, dpi = 300)
+```
 
 # Supplementary
 
