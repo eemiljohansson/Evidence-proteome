@@ -3,3 +3,97 @@ title: "The Missing Proteome"
 format: html
 ---
 
+# Load packages
+
+```{r}
+library(tidyverse)
+```
+
+# Load data
+
+```{r}
+# Load the upcoming updated HPA data (version 25)
+hpa_data_v24 <- read_csv("../data/HPA v.24/hpa_evidence_v24.csv")
+head(hpa_data_v24)
+
+hpa_data_v25 <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
+head(hpa_data_v24)
+
+uniprot_data <- read_csv("../data/HPA v.25/uniprot_v24.csv")
+head(uniprot_data)
+```
+
+# Counting missing proteome
+
+## v.24 - Missing proteome
+
+```{r}
+v24_missing <- hpa_data_v24 |>
+  filter(`HPA evidence` == "No human protein/transcript evidence")
+
+nrow(v24_missing)
+```
+
+## v.25 - Added through cell type and cell line data
+
+```{r}
+v25_missing <- hpa_data_v25 |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  filter(`HPA evidence` == "No evidence")
+
+nrow(v25_missing)
+
+
+v_24_v_25_missing <- v25_missing |>
+  filter(Ensembl %in% v24_missing$Ensembl)
+
+# Difference between 
+v25_missing |>
+  setdiff(v_24_v_25_missing) |>
+  inner_join(hpa_data_v24, by = "Ensembl")
+```
+
+## UniProt evidence
+
+```{r}
+# Remove Ensembl for which Uniprot has evidence, PE1 or PE2
+missing_proteome <- v25_missing |>
+  filter(!Ensembl %in% (uniprot_data |> 
+                          filter(`Uniprot evidence` == "Experimental evidence at protein level (PE1)" |
+                                   `Uniprot evidence` == "Experimental evidence at transcript level (PE2)"))$Ensembl) 
+
+missing_proteome |> nrow()
+```
+
+## Has GO terms (BP, MF, CC)
+
+```{r}
+missing_proteome_with_go <- missing_proteome |>
+  inner_join(hpa_data_v24 |>
+               select(Ensembl, `Biological process`, `Molecular function`), by = "Ensembl") |>
+  filter(!is.na(`Biological process`) | !is.na(`Molecular function`))
+
+missing_proteome_go
+nrow(missing_proteome_with_go)
+missing_proteome_go |> count(`Biological process`)
+
+
+missing_proteome_no_go <- missing_proteome |>
+  inner_join(hpa_data_v24, by = "Ensembl") |>
+  filter(is.na(`Biological process`)) |>
+  filter(is.na(`Molecular function`))
+
+missing_proteome_no_go
+nrow(missing_proteome_no_go)
+
+missing_proteome_no_go |>
+  write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
+```
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```
+
+End of file.
