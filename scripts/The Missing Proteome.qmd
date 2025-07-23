@@ -88,6 +88,10 @@ nrow(missing_proteome_no_go)
 
 missing_proteome_no_go |>
   write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
+
+missing_proteome_no_go |>
+  select(Ensembl, Gene = Gene.y, `Gene synonym`, `Gene description`, `HPA evidence` = `HPA evidence.x`, Chromosome, Antibody) |>
+  write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
 ```
 
 # SessionInfo
