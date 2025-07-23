@@ -3,3 +3,191 @@ title: "Chromosomal Overview of the HPA Evidence Proteome"
 format: html
 ---
 
+# Load packages
+
+```{r}
+library(tidyverse)
+library(RIdeogram)
+library(patchwork)
+```
+
+
+# Load data
+
+```{r}
+genome <- read_tsv("../data/Ensembl/mart_export.txt")
+head(genome)
+
+hpa_data_v24 <- read_csv("../data/HPA v.24/hpa_data_v24.csv")
+head(hpa_data_v24)
+
+hpa_data_v25 <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
+head(hpa_data_v25)
+```
+
+# Prepare genome wide data
+
+```{r}
+data(human_karyotype, package="RIdeogram")
+
+genome |> distinct(`Chromosome/scaffold name`) |>
+  arrange(`Chromosome/scaffold name`)
+
+genome |> 
+  filter(`Chromosome/scaffold name` %in% c(1:22, "X", "Y")) |>
+  distinct(`Gene type`, .keep_all = TRUE) |>
+  arrange(`Gene type`) |>
+  select(`Gene type`, `Chromosome/scaffold name`)
+
+hpa_genome_raw <- genome |>
+  select(Gene = `Gene stable ID`, Start = `Gene start (bp)`, End = `Gene end (bp)`, Chromosome = `Chromosome/scaffold name`, Strand = `Strand`, `Gene type`) |>
+  filter(Chromosome %in% c(1:22, "X", "Y"))
+
+hpa_genome_raw |> distinct(Chromosome) |> arrange(Chromosome)
+
+hpa_genome <- hpa_data_v25 |>
+  select(Gene = Ensembl,  `HPA evidence`) |>
+  distinct(Gene, .keep_all = TRUE) |>
+  right_join(hpa_genome_raw, by = "Gene") |>
+  distinct(Gene, .keep_all = TRUE) |>
+  na.omit() |> # 20,125 genes? Where did the 20,162 - 37 genes go?
+  # Replace No evidence with 0 and all other values with 1
+  mutate(`HPA evidence` = case_when(`HPA evidence` == "Evidence at protein level" ~ 1,
+                                    `HPA evidence` == "Evidence at transcript level" ~ 0.5,
+                                    `HPA evidence` == "No evidence" ~ 0)) |>
+  arrange(Gene)
+```
+
+
+# Plots
+
+## RIdeogram plot of HPA evidence distribution
+
+```{r}
+svg_file <- ideogram(karyotype = human_karyotype, 
+                     overlaid = hpa_genome |> 
+                       rename(Value = `HPA evidence`) |> 
+                       select(Chr = Chromosome, Start, End, Value) |> 
+                       arrange(Chr, Start),
+                     output = "chromosome.svg")
+
+convertSVG("chromosome.svg", device = "png")
+
+convertSVG(svg_file, file = "hpa_evidence")
+
+svg2png(svg = svg_file)
+```
+
+```{r}
+svg_file <- ideogram(karyotype = human_karyotype, 
+                     overlaid = hpa_genome |> 
+                       rename(Value = `HPA evidence`) |> 
+                       select(Chr = Chromosome, Start, End, Value) |> 
+                       arrange(Chr, Start),
+                     colorset1 = c("firebrick", "darkorange", "darkgreen"), # Custom colors for HPA evidence categories
+                     output = "chromosome.svg")
+
+svg2pdf("chromosome.svg", width= 10, height = 14, file = "chromosomal_hpa_evidence.pdf")
+svg2png("chromosome.svg", width = 10, height = 14, file = "chromosomal_hpa_evidence.png")
+```
+
+## Stacked bar plot of HPA evidence distribution by chromosome
+
+```{r}
+# Define chromosome order
+chrom_order <- c(as.character(1:22), "X", "Y")
+
+# Custom colors for HPA evidence categories
+custom_colors <- c(
+  "Evidence at protein level" = "darkgreen",     # blue
+  "Evidence at transcript level" = "darkorange",  # orange
+  "No evidence" = "firebrick"  # red
+)
+
+# Plot
+chromosomal_bar_percentage <- hpa_data_v25 %>%
+  inner_join(hpa_data_v24 |> select(Ensembl, Chromosome), by = "Ensembl") %>%
+  select(Ensembl, Chromosome, `HPA evidence`) %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  filter(!Chromosome %in% c("MT", "Unmapped")) %>%
+  mutate(Chromosome = factor(Chromosome, levels = chrom_order)) %>%
+  count(Chromosome, `HPA evidence`) %>%
+  group_by(Chromosome) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  ungroup() %>%
+  ggplot(aes(x = Chromosome, y = percentage, fill = `HPA evidence`)) +
+  geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+  scale_fill_manual(values = custom_colors) +  # 👈 custom colors applied here
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), labels = scales::percent_format(scale = 1)) +
+  labs(
+    x = "Chromosome",
+    y = "Percentage of genes",
+    fill = "HPA Evidence",
+    title = "Distribution of HPA Evidence Categories by Chromosome"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text.x.top = element_blank()
+  ) +
+  coord_flip()
+
+chromosomal_bar_percentage
+
+ggsave("Stacked bar plot HPA evidence distribution v.25.pdf", width = 7, height = 14, dpi = 300, path = "../plots/pdf/Figure 5")
+ggsave("Stacked bar plot HPA evidence distribution v.25.png", width = 7, height = 14, dpi = 300, path = "../plots/png/Figure 5")
+```
+
+```{r}
+# Plot
+chromosomal_bar_n <- hpa_data_v25 %>%
+  inner_join(hpa_data_v24 |> select(Ensembl, Chromosome), by = "Ensembl") %>%
+  select(Ensembl, Chromosome, `HPA evidence`) %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  mutate(Chromosome = factor(Chromosome, levels = chrom_order)) %>%
+  count(Chromosome, `HPA evidence`) %>%
+  ungroup() %>%
+  ggplot(aes(x = Chromosome, y = n, fill = `HPA evidence`)) +
+  geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+  scale_fill_manual(values = custom_colors) +  # 👈 custom colors applied here
+  labs(
+    x = "Chromosome",
+    y = "Number of genes",
+    fill = "HPA Evidence",
+    title = "Distribution of HPA Evidence Categories by Chromosome"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text.x.top = element_blank()
+  ) +
+  coord_flip()
+
+chromosomal_bar_n
+
+ggsave("Stacked bar plot HPA evidence count v.25.pdf", width = 7, height = 14, dpi = 300, path = "../plots/pdf/Figure 5")
+ggsave("Stacked bar plot HPA evidence count v.25.png", width = 7, height = 14, dpi = 300, path = "../plots/png/Figure 5")
+```
+
+```{r}
+combined_chromosome_plots <- chromosomal_bar_percentage + chromosomal_bar_n + 
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(legend.position = "top")
+
+combined_chromosome_plots
+
+ggsave("combined_chromosome_plots v.25.pdf", width = 14, height = 14, dpi = 300, path = "../plots/pdf/Figure 5")
+ggsave("combined_chromosome_plots count v.25.png", width = 14, height = 14, dpi = 300, path = "../plots/png/Figure 5")
+```
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```
+
+End of file.
