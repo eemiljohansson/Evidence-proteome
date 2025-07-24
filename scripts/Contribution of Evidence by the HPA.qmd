@@ -1181,6 +1181,35 @@ ggsave("../plots/png/Figure 3/Figure 3K.png", width = 10, height = 7, dpi = 300)
 ## HPA contributing genes
 
 ```{r}
+# Consensus proteome
+
+hpa_data |> 
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(
+    uniprot_data |> select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) |>
+  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "No evidence") |>
+  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein inferred from homology (PE3)") |>
+  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein predicted (PE4) ") |>
+  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein uncertain (PE5)")
+
+
+
+hpa_data |> 
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(
+    uniprot_data |> select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) |>
+  filter(`HPA evidence` == "Evidence at protein level" & `Uniprot evidence` == "Experimental evidence at protein level (PE1)" |
+         `HPA evidence` == "Evidence at transcript level" & `Uniprot evidence` == "Experimental evidence at protein level (PE1)" |
+         `HPA evidence` == "Evidence at protein level" & `Uniprot evidence` == "Experimental evidence at transcript level (PE2)"|
+         `HPA evidence` == "Evidence at transcript level" & `Uniprot evidence` == "Experimental evidence at transcript level (PE2)")
+```
+
+
+```{r}
 # Seek overlapping Ensembl from multi_target_data and hpa_contributing_genes
 hpa_contributing_genes |>
   select(-Gene) |>
@@ -1230,6 +1259,139 @@ hpa_contributing_genes |>
   write_csv("../tables/Figure 2/Supplementary tables.csv")
 ```
 
+## Overlaps between UniProt and HPA
+
+```{r}
+# 1) identify your “contributing” proteins
+upset_base <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) 
+
+# Make a binary wide matrix: 1 if evidence in dataset, 0 otherwise
+upset_data <- upset_base %>%
+  distinct(Ensembl, Evidence_type) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = Evidence_type, values_from = value, values_fill = 0)
+
+set_order <- c("HPA: Evidence at protein level", 
+               "UniProt: Evidence at protein level", 
+               "HPA: Evidence at transcript level", 
+               "UniProt: Evidence at transcript level", 
+               "UniProt: Evidence at homology level", "
+               UniProt: Proten predicted", 
+               "Uniprot: Protein uncertain",
+               "HPA: No evidence",
+               "Uniprot: No evidence")
+
+# Reverse the order for plotting
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+upset_contributing_transcripts <- ComplexUpset::upset(
+  upset_data,
+  intersect = set_order,
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4
+      ) 
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over",
+)
+
+upset_contributing_transcripts
+```
+
+```{r}
+# 1) Prepare a combined binary annotation dataset clearly distinguishing sources
+upset_base <- hpa_data %>%
+  distinct(Ensembl, `HPA evidence`) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`) |>
+      mutate(`Uniprot evidence` = case_when(
+        `Uniprot evidence` == "Protein inferred from homology (PE3)" ~ "Protein inferred from homology",
+        `Uniprot evidence` == "Protein predicted (PE4)" ~ "Protein predicted",
+        `Uniprot evidence` == "Protein uncertain (PE5)" ~ "Protein uncertain",
+        `Uniprot evidence` == "Experimental evidence at protein level (PE1)" ~ "Evidence at protein level",
+        `Uniprot evidence` == "Experimental evidence at transcript level (PE2)" ~ "Evidence at transcript level"
+      )),
+    by = "Ensembl"
+  ) %>%
+  mutate(
+    `HPA evidence` = case_when(
+      is.na(`HPA evidence`) ~ "HPA: No evidence",
+      TRUE ~ paste0("HPA: ", `HPA evidence`)
+    ),
+    `Uniprot evidence` = case_when(
+      is.na(`Uniprot evidence`) ~ "UniProt: No evidence",
+      TRUE ~ paste0("UniProt: ", `Uniprot evidence`)
+    )
+  ) %>%
+  select(Ensembl, `HPA evidence`, `Uniprot evidence`)
+
+# 2) Pivot clearly into a wide binary matrix
+upset_data <- upset_base %>%
+  pivot_longer(cols = c(`HPA evidence`, `Uniprot evidence`),
+               names_to = "source",
+               values_to = "evidence") %>%
+  distinct(Ensembl, evidence) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = evidence, values_from = value, values_fill = 0)
+
+# 3) Your clearly defined column order (fixed typos)
+set_order <- c(
+  "HPA: Evidence at protein level",
+  "UniProt: Evidence at protein level",
+  "HPA: Evidence at transcript level",
+  "UniProt: Evidence at transcript level",
+  "UniProt: Protein inferred from homology",
+  "UniProt: Protein predicted",
+  "UniProt: Protein uncertain",
+  "HPA: No evidence",
+  "UniProt: No evidence"
+)
+
+# Check actual available columns (to avoid column-not-found errors)
+set_order <- intersect(set_order, colnames(upset_data))
+
+# Reverse order for ComplexUpset
+set_order <- rev(set_order)
+
+# Subset columns explicitly for ComplexUpset
+upset_data <- upset_data %>%
+  select(Ensembl, all_of(set_order))
+
+# 4) Create ComplexUpset plot
+upset_hpa_uniprot <- ComplexUpset::upset(
+  upset_data,
+  intersect = set_order,
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = after_stat(count)),
+        stat     = "count",
+        hjust    = -0.1,         # move text to the right of bars
+        size     = 4,
+        color    = "black",      # black color
+        fontface = "bold"        # bold text
+      ) 
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over"
+)
+
+
+upset_hpa_uniprot
+```
 
 
 # SessionInfo
