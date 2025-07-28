@@ -310,6 +310,8 @@ venn_plot <- plot(
   main       = "HPA Protein‐Level Evidence Venn"
 )
 
+print(venn_plot)
+
 # PDF
 ggsave(
   filename = "../plots/pdf/Figure 3/Figure 3C.pdf",
@@ -330,6 +332,28 @@ ggsave(
   device   = "png"
 )
 ```
+
+```{r}
+wb_contributing <- venn_data$`Western blot` |> as.data.frame() |> rename(Ensembl = "venn_data$`Western blot`") |>
+  mutate(WB = "Yes")
+if_contibuting <- venn_data$Immunofluorescence |> as.data.frame() |> rename(Ensembl = "venn_data$Immunofluorescence") |>
+  mutate(IF = "Yes")
+ihc_contributing <- venn_data$Immunohistochemistry |> as.data.frame() |> rename(Ensembl = "venn_data$Immunohistochemistry") |>
+  mutate(IHC = "Yes")
+
+wb_contributing |>
+  full_join(if_contibuting, by = "Ensembl") |>
+  full_join(ihc_contributing, by = "Ensembl") |> 
+  # if NA, replace with "No"
+  mutate(
+    WB = coalesce(WB, "No"),
+    IF = coalesce(IF, "No"),
+    IHC = coalesce(IHC, "No")
+  ) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene synonym`, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  write_xlsx("../tables/Figure 3/venn_contributing_proteins.xlsx")
+```
+
 
 ### Upset: Transcript level evidence
 
@@ -355,8 +379,7 @@ hpa_contributing_transcripts <- hpa_data %>%
   ) %>%
   pull(Ensembl)
 
-# Define your protein evidence datasets
-protein_datasets <- c("Western blot", "Immunohistochemistry", "Immunofluorescence")
+# Define your transcript evidence datasets
 rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
 
 # Filter and select
@@ -397,6 +420,12 @@ upset_contributing_transcripts
 
 ggsave("../plots/pdf/Figure 3/Figure 3D.pdf", width = 14, height = 7, dpi = 300)
 ggsave("../plots/png/Figure 3/Figure 3D.png", width = 14, height = 7, dpi = 300)
+```
+
+```{r}
+upset_data |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene synonym`, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  write_xlsx("../tables/Figure 3/upset_contributing_transcripts.xlsx")
 ```
 
 ## Sankey: Tissue specificity
@@ -1392,7 +1421,6 @@ upset_hpa_uniprot <- ComplexUpset::upset(
 
 upset_hpa_uniprot
 ```
-
 
 # SessionInfo
 
