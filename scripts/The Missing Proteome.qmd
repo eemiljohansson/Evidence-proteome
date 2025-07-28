@@ -7,6 +7,8 @@ format: html
 
 ```{r}
 library(tidyverse)
+library(treemap)
+library(patchwork)
 ```
 
 # Load data
@@ -92,6 +94,103 @@ missing_proteome_no_go |>
 missing_proteome_no_go |>
   select(Ensembl, Gene = Gene.y, `Gene synonym`, `Gene description`, `HPA evidence` = `HPA evidence.x`, Chromosome, Antibody) |>
   write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
+```
+
+## GO terms
+
+```{r}
+make_treemap_save <- function(df, column, 
+                              max_categories = 50, 
+                              title = "Treemap",
+                              file_prefix = "treemap",
+                              out_dir = "figures/figure 3/") {
+  # Prepare counts (split, flatten, count)
+  items <- df %>%
+    dplyr::pull({{ column }}) %>%
+    stringr::str_split(", ") %>%
+    unlist() %>%
+    na.omit() %>%
+    stringr::str_trim() %>%
+    .[. != ""]
+  tab <- as.data.frame(table(items))
+  tab <- tab %>% dplyr::arrange(desc(Freq)) %>% head(max_categories)
+  
+  # Set up filename
+  file_base <- paste0(out_dir, file_prefix, "_", gsub(" ", "_", title))
+  png_file <- paste0(file_base, ".png")
+  pdf_file <- paste0(file_base, ".pdf")
+  
+  # PNG
+  png(png_file, width = 1200, height = 900, res = 120)
+  treemap(tab,
+          index = "items",
+          vSize = "Freq",
+          title = title,
+          fontsize.title = 20,
+          fontsize.labels = 16,
+          align.labels = list(c("center", "center")),
+          border.col = "white",
+          palette = "Set2")
+  dev.off()
+  # PDF
+  pdf(pdf_file, width = 12, height = 9)
+  treemap(tab,
+          index = "items",
+          vSize = "Freq",
+          title = title,
+          fontsize.title = 20,
+          fontsize.labels = 16,
+          align.labels = list(c("center", "center")),
+          border.col = "white",
+          palette = "Set2")
+  dev.off()
+  cat("Saved:", png_file, "and", pdf_file, "\n")
+}
+```
+
+```{r}
+# Assume missing_proteome_go is already loaded and has 
+# the columns "Biological process" and "Molecular function"
+
+# 1) make sure output dir exists
+if(!dir.exists("figures/figure 4/missing")) {
+  dir.create("figures/figure 4/missing", recursive = TRUE)
+}
+
+# 2) call the treemap saver on the two GO columns
+make_treemap_save(
+  missing_proteome_go,
+  `Biological process`,
+  max_categories = 50,
+  title = "Missing proteome: Biological process",
+  file_prefix = "missing_Biological_process",
+  out_dir     = "figures/figure 4/missing/"
+)
+
+make_treemap_save(
+  missing_proteome_go,
+  `Molecular function`,
+  max_categories = 50,
+  title = "Missing proteome: Molecular function",
+  file_prefix = "missing_Molecular_function",
+  out_dir     = "figures/figure 4/missing/"
+)
+
+```
+
+```{r}
+p1 <- make_ggtreemap(missing_proteome_go, `Biological process`,
+                     max_categories = 50,
+                     title = "Missing proteome: Biological process")
+p2 <- make_ggtreemap(missing_proteome_go, `Molecular function`,
+                     max_categories = 50,
+                     title = "Missing proteome: Molecular function")
+
+combined_missing <- p1 + p2 + plot_layout(ncol = 2)
+
+# Save
+ggsave("../plots/pdf/Figure 4/Combined_Missing_Treemaps.pdf", combined_missing, width = 14, height = 7, dpi = 300)
+ggsave("../plots/png/figure 4/Combined_Missing_Treemaps.png", combined_missing, width = 14, height = 7)
 ```
 
 # SessionInfo
