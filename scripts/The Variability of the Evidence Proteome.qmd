@@ -16,12 +16,12 @@ library(cowplot)
 # Load data
 
 ```{r}
-ensembl_data <- read_csv("data/ensembl_data_v32_v109.csv")
+ensembl_data <- read_csv("../data/Ensembl/ensembl_data_v32_v109.csv")
 head(ensembl_data)
 ```
 
 ```{r}
-hpa_data <- read_csv("data/hpa_data_v24.csv")
+hpa_data <- read_csv("../data/HPA v.24//hpa_data_v24.csv")
 head(hpa_data)
 ```
 
@@ -32,12 +32,10 @@ head(hpa_data)
 ### Prepare the plot
 
 ```{r}
-# Step 1: For each gene, count number of versions present
 gene_version_count <- ensembl_data %>%
   group_by(ensg_id) %>%
   summarise(n_versions = n_distinct(ensembl_version), .groups = "drop")
 
-# Step 2: Assign version groups (with new 6–15 group)
 gene_version_count <- gene_version_count %>%
   mutate(version_group = case_when(
     n_versions == 42 ~ "All (42 versions)",
@@ -49,7 +47,6 @@ gene_version_count <- gene_version_count %>%
     TRUE ~ "Other"
   ))
 
-# Step 3: Set factor order for stacking/legend (first = bottom of bars)
 gene_version_count$version_group <- factor(
   gene_version_count$version_group,
   levels = c(
@@ -62,23 +59,20 @@ gene_version_count$version_group <- factor(
   )
 )
 
-# Step 4: Join group to every row of ensembl_data
 ensembl_data_with_group <- ensembl_data %>%
   left_join(gene_version_count, by = "ensg_id")
 
-# Step 5: Order Ensembl versions on x-axis
-# Convert ensembl_version to numeric BEFORE making it a factor (if not already)
 ensembl_data_with_group$ensembl_version <- as.numeric(as.character(ensembl_data_with_group$ensembl_version))
 
 ensembl_data_with_group$ensembl_version <- factor(
   ensembl_data_with_group$ensembl_version,
-  levels = sort(unique(ensembl_data_with_group$ensembl_version)) # numeric sort!
+  levels = sort(unique(ensembl_data_with_group$ensembl_version))
 )
 ```
 
 ### Plot
 
-```{r, fig.with=14, fig.height=10}
+```{r}
 # Step 6: Plot with stacking
 fig1a <- ggplot(ensembl_data_with_group, aes(x = ensembl_version, fill = version_group)) +
   geom_bar() +
@@ -93,14 +87,13 @@ fig1a <- ggplot(ensembl_data_with_group, aes(x = ensembl_version, fill = version
 
 fig1a
 
-ggsave("plots/png/Figure 1/Figure 1A.png", fig1a, width = 10, height = 6, dpi = 300)
-ggsave("plots/pdf/Figure 1/Figure 1A.pdf", fig1a, width = 10, height = 6, dpi = 300)
+ggsave("../plots/png/Figure 1/Figure 1A.png", fig1a, width = 10, height = 6, dpi = 300)
+ggsave("../plots/pdf/Figure 1/Figure 1A.pdf", fig1a, width = 10, height = 6, dpi = 300)
 ```
 
 ### Additional information
 
 ```{r}
-# Print the number of each version subset
 ensembl_data_with_group %>%
   group_by(version_group) %>%
   summarise(n_genes = n_distinct(ensg_id), .groups = "drop") %>%
@@ -108,7 +101,6 @@ ensembl_data_with_group %>%
 ```
 
 ```{r}
-# Calculate the number of genes per Ensembl version and print the change between versions, also print the 
 ensembl_data_with_group %>%
   group_by(ensembl_version) %>%
   summarise(n_genes = n_distinct(ensg_id), .groups = "drop") %>%
@@ -122,13 +114,11 @@ ensembl_data_with_group %>%
 
 ### Minimal
 
-```{r, fig.with=14, fig.height=10}
-# Step 1: Build gene_version_count as before
+```{r}
 gene_version_count <- ensembl_data %>%
   distinct(ensg_id, ensembl_version) %>%
   mutate(present = 1)
 
-# Step 2: Wide binary matrix, join to HPA genes, ensure all versions present
 gene_version_matrix <- gene_version_count %>%
   pivot_wider(
     names_from = ensembl_version,
@@ -141,24 +131,19 @@ gene_version_matrix <- gene_version_count %>%
     by = c("ensg_id" = "Ensembl")
   )
 
-# Step 3: Set rownames, drop gene column
 rownames(gene_version_matrix) <- gene_version_matrix$ensg_id
 gene_version_matrix <- gene_version_matrix[, -1]
 
-# Step 4: Ensure columns (versions) are numeric and in order
-# (handles versions as strings/characters)
 version_order <- sort(as.numeric(colnames(gene_version_matrix)))
 gene_version_matrix <- gene_version_matrix[, as.character(version_order)]
 
-# Step 5: Flip matrix so versions on y-axis, genes on x-axis
 gene_version_matrix_t_hpa <- t(gene_version_matrix)
 
-# Step 6: Plot with versions as y-axis (no clustering on versions, only genes)
 fig1b_minimal <- pheatmap(
   gene_version_matrix_t_hpa,
   color = c("white", "darkgreen"),
-  cluster_rows = FALSE,   # versions (y axis) in chronological order
-  cluster_cols = TRUE,    # cluster genes if you want; set FALSE for no clustering
+  cluster_rows = FALSE,
+  cluster_cols = TRUE,
   legend_breaks = c(0,1),
   legend_labels = c("Absent", "Present"),
   main = "Gene Presence Across Ensembl Versions",
@@ -168,8 +153,8 @@ fig1b_minimal <- pheatmap(
 
 fig1b_minimal
 
-ggsave("plots/png/Figure 1/Figure 1B minimal.png", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1/Figure 1B minimal.pdf", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 1/Figure 1B minimal.png", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 1/Figure 1B minimal.pdf", fig1b_minimal$gtable, width = 14, height = 10, dpi = 300)
 ```
 
 ### More detailed version
@@ -241,15 +226,15 @@ fig1b <- pheatmap(
 
 fig1b
 
-ggsave("plots/png/Figure 1/Figure 1B.png", fig1b$gtable, width = 14, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1/Figure 1B.pdf", fig1b$gtable, width = 14, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 1/Figure 1B.png", fig1b$gtable, width = 14, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 1/Figure 1B.pdf", fig1b$gtable, width = 14, height = 10, dpi = 300)
 ```
 
 # All genes ever added to Ensembl
 
 ## Minimal
 
-```{r, fig.with=24, fig.height=10}
+```{r}
 # Step 1: Build gene_version_count as before
 gene_version_count <- ensembl_data %>%
   distinct(ensg_id, ensembl_version) %>%
@@ -291,13 +276,13 @@ fig1c_minimal <- pheatmap(
 
 fig1c_minimal
 
-ggsave("plots/png/Figure 1/Figure 1C minimal.png", width = 24, height = 10, dpi = 300)
-ggsave("plots/pdf/Figure 1/Figure 1C minimal.pdf", width = 24, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 1/Figure 1C minimal.png", width = 24, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 1/Figure 1C minimal.pdf", width = 24, height = 10, dpi = 300)
 ```
 
 ## More detailed version
 
-```{r, fig.with=24, fig.height=14}
+```{r}
 gene_version_count <- ensembl_data %>%
   distinct(ensg_id, ensembl_version) %>%
   mutate(present = 1)
@@ -338,10 +323,9 @@ gene_version_matrix_t <- t(gene_version_matrix)
 
 annotation_col <- gene_version_summary %>%
   select(ensg_id, version_group) %>%
-  filter(ensg_id %in% colnames(gene_version_matrix_t)) %>%  # match genes exactly
+  filter(ensg_id %in% colnames(gene_version_matrix_t)) %>%
   column_to_rownames("ensg_id")
 
-# Ensure identical order between annotation_col and heatmap columns
 annotation_col <- annotation_col[colnames(gene_version_matrix_t), , drop = FALSE]
 
 version_levels <- c(
@@ -368,17 +352,17 @@ fig1c <- pheatmap(
   main = "Gene Presence Across Ensembl Versions",
   show_rownames = TRUE,
   show_colnames = FALSE,
-  annotation_col = annotation_col,          # Correct annotation_col
-  annotation_colors = annotation_colors     # Correct annotation colors
+  annotation_col = annotation_col,
+  annotation_colors = annotation_colors
 ) 
 
 fig1c
 
-png(filename = "plots/png/Figure 1/Figure 1C.png", width = 24, height = 10, units = "in", res = 300)
+png(filename = "../plots/png/Figure 1/Figure 1C.png", width = 24, height = 10, units = "in", res = 300)
 grid::grid.draw(fig1c$gtable)
 dev.off()
 
-pdf(file = "plots/pdf/Figure 1/Figure 1C.pdf", width = 24, height = 10)
+pdf(file = "../plots/pdf/Figure 1/Figure 1C.pdf", width = 24, height = 10)
 grid::grid.draw(fig1c$gtable)
 dev.off()
 ```
@@ -386,14 +370,11 @@ dev.off()
 # Combine figures
 
 ```{r}
-# Extract grob for cowplot/patchwork
 fig1b_grob <- fig1b$gtable
 fig1c_grob <- fig1c$gtable
 
-# Create top row (two panels: fig1a and fig1b_grob)
 top_row <- cowplot::plot_grid(
   fig1a + 
-    # Put legends at top
     theme(legend.position = "top"), 
   fig1b_grob,
   labels = c("A", "B"),
@@ -401,22 +382,20 @@ top_row <- cowplot::plot_grid(
   ncol = 2
 )
 
-# Single bottom row (fig1c_grob) spanning both columns
 figure_1 <- cowplot::plot_grid(
   top_row,
   fig1c_grob,
   labels = c("", "C"),
   label_size = 12,
   ncol = 1,
-  rel_heights = c(1, 1.1) # You can tweak this ratio for your desired proportions
+  rel_heights = c(1, 1.1)
 )
 
-cairo_pdf("plots/pdf/Figure 1/Figure 1.pdf", width = 24, height = 28, pointsize = 10)
+cairo_pdf("../plots/pdf/Figure 1/Figure 1.pdf", width = 24, height = 28, pointsize = 10)
 print(figure_1)
 dev.off()
 
-# Save using cowplot function
-cowplot::save_plot("plots/png/Figure 1/Figure 1.png", figure_1, base_width = 24, base_height = 28, dpi = 300)
+cowplot::save_plot("../plots/png/Figure 1/Figure 1.png", figure_1, base_width = 24, base_height = 28, dpi = 300)
 ```
 
 # SessionInfo
@@ -425,4 +404,4 @@ cowplot::save_plot("plots/png/Figure 1/Figure 1.png", figure_1, base_width = 24,
 sessionInfo()
 ```
 
-End of quarto file.
+End of file.

@@ -28,7 +28,6 @@ uniprot_data_v24 <- read_tsv("../data/UniProt/HPAv24_uniprot_pe1_5.txt")
 head(uniprot_data_v24)
 
 uniprot_data_v24 <- uniprot_data_v24 |> rename(Ensembl = ensg_id, Gene = display_name, UniProt = uniprot_id, `Uniprot evidence` = name) |>
-  # Remove "UniProt - " Prefix from `Uniprot evidence`
   mutate(`Uniprot evidence` = str_remove(`Uniprot evidence`, "UniProt - ")) |>
   mutate(`Uniprot evidence` = case_when(`Uniprot evidence` == "Evidence at protein level" ~ "Experimental evidence at protein level (PE1)",
                                       `Uniprot evidence` == "Evidence at transcript level" ~ "Experimental evidence at transcript level (PE2)",
@@ -205,7 +204,6 @@ We are also adding information from the HPA v.24 file to the new v.25 file.
 ### Without annotations
 
 ```{r}
-# Define which datasets are RNA and which are protein
 rna_datasets <- c("Tissue", "Brain", "Cell type", "Cell line", "Immune cell type")
 protein_datasets <- c("Western blot", "Immunofluorescence", "Immunohistochemistry")
 
@@ -221,7 +219,6 @@ hpa_evidence_v25 <- bind_rows(
   ihc_evidence
 ) 
 
-# Step 2: Summarize evidence for each Ensembl gene (RNA and protein separately)
 summary_evidence <- hpa_evidence_v25 %>%
   group_by(Ensembl) %>%
   summarise(
@@ -240,20 +237,18 @@ summary_evidence <- hpa_evidence_v25 %>%
     `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence at protein level", "No evidence")
   )
 
-# Step 3: Join the two new annotation columns back to the main table
 hpa_evidence_v25 <- hpa_evidence_v25 %>%
   left_join(
     summary_evidence %>% select(Ensembl, `Evidence annotation (transcript)`, `Evidence annotation (protein)`),
     by = "Ensembl"
   ) |>
-  # Add column called `HPA evidence` that takes 
   mutate(`HPA evidence` = case_when(
       `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
       `Evidence annotation (transcript)` != "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
       `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` != "Evidence at protein level" ~ "Evidence at transcript level",
       TRUE ~ "No evidence"
     ))
-# Example: Count unique Ensembl genes for each combination of annotations
+
 hpa_evidence_v25 %>%
   distinct(Ensembl, .keep_all = TRUE) %>%
   count(`Evidence annotation (transcript)`, `Evidence annotation (protein)`)
@@ -283,4 +278,4 @@ write_csv(uniprot_data_v24, "../data/HPA v.25/uniprot_v24.csv")
 sessionInfo()
 ```
 
-End of Quarto file.
+End of file.
