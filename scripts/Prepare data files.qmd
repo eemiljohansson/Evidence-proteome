@@ -17,13 +17,11 @@ Dataframe containing Ensembl gene ID, the version it was part of and which chrom
 
 ```{r}
 ensembl_data_v109 <- read_csv("../data/Ensembl/ensembl_data_v32_v109.csv")
-ensembl_data_v109 <- rename(Ensembl = ensg_id)
+ensembl_data_v109 <- ensembl_data_v109 |> rename(Ensembl = ensg_id)
 head(ensembl_data_v109)
 ```
 
 ## UniProt v.24
-
-
 
 ```{r}
 uniprot_data_v24 <- read_tsv("../data/UniProt/HPAv24_uniprot_pe1_5.txt")
@@ -68,9 +66,10 @@ Here we are preparing the updated HPA version 25 data with the latest RNA and pr
 RNA: Included the maximum nTPM values for tissue, brain, cell type, immune cell type, and cell line data.
 Protein: Only contains "Enhanced" & "Supported" evidence levels from immunoflorescence, immunohistochemistry, and western blot.
 
-### RNA (update)
+### RNA
 
-We are considering RNA evidence if >= 1 nTPM is present in the dataset. The datasets are tissue, brain, cell type, immune cell type, and cell line.
+We are considering RNA evidence if >= 1 nTPM | >= 1 nCPM is present in the dataset. The datasets are tissue, brain, cell type, immune cell type, and cell line.
+For simplicity, we are assuming that nTPM and nCPM are equivalent.
 
 ```{r}
 # RNA bulk
@@ -102,15 +101,15 @@ head(brain_evidence)
 # Single-cell
 
 ## Cell-type
-cell_type_data <- read_tsv("../data/HPA v.25/datasets/RNA/rna_single_cell_cluster.tsv")
+cell_type_data <- read_tsv("../data/HPA v.25/datasets/RNA/single_cell_all_cell_types.tsv")
 head(cell_type_data)
 
 cell_type_evidence <- cell_type_data |>
-  group_by(Gene) |>
-  summarise(max_ntpm = max(nTPM)) |>
+  group_by(ensg_id) |>
+  summarise(max_ntpm = max(nCPM)) |>
   mutate(Evidence_type = ifelse(max_ntpm >= 1, "Cell type evidence", "No cell type evidence")) |>
   mutate(Dataset = "Cell type") |>
-  rename(Ensembl = Gene)
+  rename(Ensembl = ensg_id)
 head(cell_type_evidence)
 
 ## Immune cell type
@@ -138,7 +137,7 @@ cell_line_evidence <- cell_line_data |>
 head(cell_line_evidence)
 ```
 
-### Protein (update)
+### Protein
 
 Currently we get the antibody reliability scores from the HPA v.24 file, but we will update this to the v.25 file in the future.
 
