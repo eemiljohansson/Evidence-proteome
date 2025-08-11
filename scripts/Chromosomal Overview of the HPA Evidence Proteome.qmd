@@ -13,6 +13,8 @@ library(gggenes)
 library(ggfittext)
 library(ggforce)
 library(plotly)
+library(gggenes)
+library(stringr)
 ```
 
 
@@ -61,7 +63,6 @@ hpa_genome <- hpa_data_v25 |>
                                     `HPA evidence` == "No evidence" ~ 0)) |>
   arrange(Gene)
 ```
-
 
 # Plots
 
@@ -273,11 +274,6 @@ ggsave("hpa_chr1_100_relative_.png", hpa_plot, width = 20, height = 7, dpi = 300
 ```
 
 ```{r}
-library(dplyr)
-library(ggplot2)
-library(gggenes)
-library(stringr)
-
 chromosome <- "1"
 
 # Prepare initial data

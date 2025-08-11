@@ -10,6 +10,7 @@ library(tidyverse)
 library(treemap)
 library(patchwork)
 library(writexl)
+library(readxl)
 ```
 
 # Load data
@@ -58,13 +59,16 @@ v25_missing |>
 ## UniProt evidence
 
 ```{r}
-# Remove Ensembl for which Uniprot has evidence, PE1 or PE2
 missing_proteome <- v25_missing |>
   filter(!Ensembl %in% (uniprot_data |> 
                           filter(`Uniprot evidence` == "Experimental evidence at protein level (PE1)" |
                                    `Uniprot evidence` == "Experimental evidence at transcript level (PE2)"))$Ensembl) 
 
-missing_proteome |> nrow()
+# Missing proteome that has no Uniprot evidence
+nrow(missing_proteome)
+
+# UniProt contributing evidence
+nrow(v25_missing) - nrow(missing_proteome)
 ```
 
 ## Has GO terms (BP, MF, CC)
@@ -78,7 +82,6 @@ missing_proteome_with_go <- missing_proteome |>
 missing_proteome_with_go
 nrow(missing_proteome_with_go)
 missing_proteome_with_go |> count(`Biological process`)
-
 
 missing_proteome_no_go <- missing_proteome |>
   inner_join(hpa_data_v24, by = "Ensembl") |>

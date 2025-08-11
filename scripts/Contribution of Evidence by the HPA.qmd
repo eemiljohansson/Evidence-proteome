@@ -1115,7 +1115,17 @@ ggsave("../plots/png/Figure 3/Figure 3K.png", width = 10, height = 7, dpi = 300)
 ## HPA contributing genes
 
 ```{r}
-# Consensus proteome
+hpa_contributing_genes <- hpa_data |> 
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(
+    uniprot_data |> select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) |>
+  filter(`HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level") |>
+  filter(`Uniprot evidence` == "Protein inferred from homology (PE3)" | 
+           `Uniprot evidence` == "Protein predicted (PE4)" | 
+           `Uniprot evidence` == "Protein uncertain (PE5)" |
+           `Uniprot evidence` == "No evidence") 
 
 hpa_data |> 
   distinct(Ensembl, .keep_all = TRUE) |>
@@ -1127,8 +1137,6 @@ hpa_data |>
   filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein inferred from homology (PE3)") |>
   filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein predicted (PE4) ") |>
   filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein uncertain (PE5)")
-
-
 
 hpa_data |> 
   distinct(Ensembl, .keep_all = TRUE) |>
@@ -1142,18 +1150,16 @@ hpa_data |>
          `HPA evidence` == "Evidence at transcript level" & `Uniprot evidence` == "Experimental evidence at transcript level (PE2)")
 ```
 
-
 ```{r}
 # Seek overlapping Ensembl from multi_target_data and hpa_contributing_genes
 hpa_contributing_genes |>
   select(-Gene) |>
   full_join(multi_target_data |> select(-Gene) |> mutate(multi_target = "Multi target"), by = "Ensembl") |>
   filter(!is.na(Dataset)) |>
-  inner_join(hpa_data_v24 |> select(Ensembl, Gene), by = "Ensembl") |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `RNA tissue specificity`), by = "Ensembl") |>
   select(Ensembl, Gene, `HPA evidence`, `Uniprot evidence`, `Evidence annotation (transcript)`, `Evidence annotation (protein)`, multi_target, `RNA tissue specificity`) |>
   write_xlsx("../tables/Figure 3/HPA contributing genes v.25.xlsx")
 ```
-
 
 ```{r}
  hpa_data %>%

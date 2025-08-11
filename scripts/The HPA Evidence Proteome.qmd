@@ -85,7 +85,6 @@ ggsave("../plots/pdf/Figure 2/Figure 2A.pdf", fig2a, width = 18, height = 7)
 ggsave("../plots/png/Figure 2/Figure 2A.png", fig2a, width = 18, height = 7)
 ```
 
-
 ## Barplot - Overlapping evidence status
 
 ```{r}
