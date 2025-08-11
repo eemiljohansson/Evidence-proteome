@@ -191,10 +191,7 @@ annotation_col <- gene_version_summary %>%
   select(ensg_id, version_group) %>%
   column_to_rownames("ensg_id")
 
-# Subset to match heatmap column names
 annotation_col <- annotation_col[colnames(gene_version_matrix_t_hpa), , drop = FALSE]
-
-library(RColorBrewer)
 
 version_levels <- c(
   "1 version",
@@ -220,8 +217,8 @@ fig1b <- pheatmap(
   main = "Gene Presence Across Ensembl Versions",
   show_rownames = TRUE,
   show_colnames = FALSE,
-  annotation_col = annotation_col,          # Added annotations
-  annotation_colors = annotation_colors     # Annotation colors
+  annotation_col = annotation_col,
+  annotation_colors = annotation_colors
 )
 
 fig1b
@@ -235,12 +232,10 @@ ggsave("../plots/pdf/Figure 1/Figure 1B.pdf", fig1b$gtable, width = 14, height =
 ## Minimal
 
 ```{r}
-# Step 1: Build gene_version_count as before
 gene_version_count <- ensembl_data %>%
   distinct(ensg_id, ensembl_version) %>%
   mutate(present = 1)
 
-# Step 2: Wide binary matrix, join to HPA genes, ensure all versions present
 gene_version_matrix <- gene_version_count %>%
   pivot_wider(
     names_from = ensembl_version,
@@ -249,19 +244,14 @@ gene_version_matrix <- gene_version_count %>%
   ) %>%
   as.data.frame() 
 
-# Step 3: Set rownames, drop gene column
 rownames(gene_version_matrix) <- gene_version_matrix$ensg_id
 gene_version_matrix <- gene_version_matrix[, -1]
 
-# Step 4: Ensure columns (versions) are numeric and in order
-# (handles versions as strings/characters)
 version_order <- sort(as.numeric(colnames(gene_version_matrix)))
 gene_version_matrix <- gene_version_matrix[, as.character(version_order)]
 
-# Step 5: Flip matrix so versions on y-axis, genes on x-axis
 gene_version_matrix_t <- t(gene_version_matrix)
 
-# Step 6: Plot with versions as y-axis (no clustering on versions, only genes)
 fig1c_minimal <- pheatmap(
   gene_version_matrix_t,
   color = c("white", "darkgreen"),
@@ -276,8 +266,8 @@ fig1c_minimal <- pheatmap(
 
 fig1c_minimal
 
-ggsave("../plots/png/Figure 1/Figure 1C minimal.png", width = 24, height = 10, dpi = 300)
-ggsave("../plots/pdf/Figure 1/Figure 1C minimal.pdf", width = 24, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 1/Figure 1C minimal.png", fig1c_minimal$gtable, width = 24, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 1/Figure 1C minimal.pdf", fig1c_minimal$gtable,  width = 24, height = 10, dpi = 300)
 ```
 
 ## More detailed version
