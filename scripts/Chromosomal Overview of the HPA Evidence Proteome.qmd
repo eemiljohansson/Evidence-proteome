@@ -96,6 +96,30 @@ svg2pdf("chromosome.svg", width= 10, height = 14, file = "chromosomal_hpa_eviden
 svg2png("chromosome.svg", width = 10, height = 14, file = "chromosomal_hpa_evidence.png")
 ```
 
+```{r}
+library(rsvg)
+
+# Generate SVG file
+svg_path <- "chromosome.svg"
+ideogram(
+  karyotype = human_karyotype, 
+  overlaid = hpa_genome |> 
+    rename(Value = `HPA evidence`) |> 
+    select(Chr = Chromosome, Start, End, Value) |> 
+    arrange(Chr, Start),
+  colorset1 = c("firebrick", "darkorange", "darkgreen"),
+  output = svg_path
+)
+
+# Convert SVG → PDF
+rsvg_pdf(svg_path, file = "chromosomal_hpa_evidence.pdf", width = 10, height = 14)
+
+# Convert SVG → PNG
+rsvg_png(svg_path, file = "chromosomal_hpa_evidence.png", width = 10 * 72, height = 14 * 72) 
+# width/height in rsvg_png are in pixels
+```
+
+
 ## Stacked bar plot of HPA evidence distribution by chromosome
 
 ```{r}
