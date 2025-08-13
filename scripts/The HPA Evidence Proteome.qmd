@@ -71,7 +71,9 @@ fig2a <- ComplexUpset::upset(
         aes(label = ..count..),
         stat = "count",
         hjust = 1,
-        size = 4
+        size = 4,
+        color = "white",
+        fontface = "bold"
       ) 
   ),
   width_ratio = 0.3,
@@ -144,7 +146,7 @@ ggsave("../plots/png/Figure 2/Figure 2B.png", fig2b, width = 10, height = 7)
 ## Venn diagram - Protein evidence status
 
 ```{r}
-protein_datasets <- c("Western blot", "Immunohistochemistry", "Immunofluorescence")
+protein_datasets <- c("Western blot", "Immunohistochemistry", "immunocytochemistry")
 
 venn_base <- hpa_data %>%
   filter(Dataset %in% protein_datasets) %>%
@@ -157,10 +159,10 @@ venn_data <- venn_base %>%
   pivot_wider(names_from = Evidence_type, values_from = value, values_fill = 0)
 
 supported_mat <- venn_data %>%
-  select(Ensembl, `Immunofluorescence evidence`, `Immunohistochemistry evidence`, `Western blot evidence`) %>%
+  select(Ensembl, `immunocytochemistry evidence`, `Immunohistochemistry evidence`, `Western blot evidence`) %>%
   distinct()
 
-colnames(supported_mat) <- c("Ensembl", "IF", "IHC", "WB")
+colnames(supported_mat) <- c("Ensembl", "ICC", "IHC", "WB")
 
 venn_fit <- eulerr::euler(
   supported_mat %>% select(-Ensembl)
@@ -171,7 +173,7 @@ fig2c <- plot(
   fills = list(fill = c("darkgreen", "darkorange", "steelblue"), alpha = 0.6),
   labels = list(font = 2),
   quantities = TRUE,
-  main = "Genes with Supported Status (IF, IHC, WB)"
+  main = "Genes with Supported Status (ICC, IHC, WB)"
 )
 
 fig2c
@@ -189,7 +191,7 @@ plot(venn_fit,
      fills = list(fill = c("darkgreen", "darkorange", "steelblue"), alpha = 0.6),
      labels = list(font = 2),
      quantities = TRUE,
-     main = "Genes with Supported Status (IF, IHC, WB)"
+     main = "Genes with Supported Status (ICC, IHC, WB)"
 )
 fig2d_grob <- grid::grid.grab()
 fig2d_gg <- cowplot::ggdraw() + cowplot::draw_grob(fig2d_grob)
