@@ -13,8 +13,8 @@ library(eulerr)
 library(HDAnalyzeR)
 library(writexl)
 library(scales)
-library(treemapify)
 library(patchwork)
+library(ggridges)
 ```
 
 # Load data
@@ -142,8 +142,8 @@ ggplot(sankey_data,
     legend.position = "top"
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 30, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 30, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 24, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 24, dpi = 300)
 ```
 
 ## Sankey: Highlighting only genes that have no UniProt evidence
@@ -253,11 +253,11 @@ wf    <- hpa_data %>%
   ) %>%
   pull(Ensembl) %>% unique()
 
-ifluo <- hpa_data %>%
+icc <- hpa_data %>%
   filter(
     Ensembl %in% hpa_contributing_proteins,
-    Dataset == "Immunofluorescence",
-    Evidence_type == "Immunofluorescence evidence"
+    Dataset == "immunocytochemistry",
+    Evidence_type == "immunocytochemistry evidence"
   ) %>%
   pull(Ensembl) %>% unique()
 
@@ -271,12 +271,12 @@ ihc   <- hpa_data %>%
 
 venn_data <- list(
   `Western blot`          = wf,
-  `Immunofluorescence`    = ifluo,
+  `immunocytochemistry`    = icc,
   `Immunohistochemistry`  = ihc
 )
 
 print(length(wf))
-print(length(ifluo))
+print(length(icc))
 print(length(ihc))
 
 common_all <- Reduce(intersect, venn_data)
@@ -288,7 +288,7 @@ venn_plot <- plot(
   venn_fit,
   fills      = list(
     `Western blot`         = "#75B2E9",
-    `Immunofluorescence`   = "#FE625E",
+    `immunocytochemistry`   = "#FE625E",
     `Immunohistochemistry` = "#E8BCAD"
   ),
   quantities = TRUE,
@@ -320,17 +320,17 @@ ggsave(
 ```{r}
 wb_contributing <- venn_data$`Western blot` |> as.data.frame() |> rename(Ensembl = "venn_data$`Western blot`") |>
   mutate(WB = "Yes")
-if_contibuting <- venn_data$Immunofluorescence |> as.data.frame() |> rename(Ensembl = "venn_data$Immunofluorescence") |>
-  mutate(IF = "Yes")
+icc_contibuting <- venn_data$immunocytochemistry |> as.data.frame() |> rename(Ensembl = "venn_data$immunocytochemistry") |>
+  mutate(ICC = "Yes")
 ihc_contributing <- venn_data$Immunohistochemistry |> as.data.frame() |> rename(Ensembl = "venn_data$Immunohistochemistry") |>
   mutate(IHC = "Yes")
 
 wb_contributing |>
-  full_join(if_contibuting, by = "Ensembl") |>
+  full_join(icc_contibuting, by = "Ensembl") |>
   full_join(ihc_contributing, by = "Ensembl") |> 
   mutate(
     WB = coalesce(WB, "No"),
-    IF = coalesce(IF, "No"),
+    ICC = coalesce(ICC, "No"),
     IHC = coalesce(IHC, "No")
   ) |>
   inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene synonym`, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
@@ -379,18 +379,30 @@ upset_data <- upset_data[, c("Ensembl", set_order)]
 upset_contributing_transcripts <- ComplexUpset::upset(
   upset_data,
   intersect = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
   set_sizes = (
     upset_set_size(position = "right") +
       geom_text(
         aes(label = ..count..),
         stat = "count",
         hjust = 1,
-        size = 4
+        size = 4,
+        color = "white",
+        fontface = "bold"
       ) 
   ),
   width_ratio = 0.3,
   sort_sets = FALSE,
-  guides = "over",
+  guides = "over"
 )
 
 upset_contributing_transcripts
@@ -405,450 +417,304 @@ upset_data |>
   write_xlsx("../tables/Figure 3/upset_contributing_transcripts.xlsx")
 ```
 
-## Sankey: Tissue specificity
+## Bar: Enrichment
 
 ```{r}
-sankey_data <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
-    by = "Ensembl"
-  ) %>%
-  mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
-  ) %>%
-  filter(
-    `Uniprot evidence` %in% c(
-      "No evidence",
-      "Protein uncertain (PE5)",
-      "Protein predicted (PE4)",
-      "Protein inferred from homology (PE3)"
-    ),
-    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
-  ) %>%
-  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
-  count(`HPA evidence`, `RNA tissue specificity`, name = "Freq")
+hpa_data_v24 %>%
+  select(Ensembl, `RNA tissue specificity`, `RNA single cell type specificity`, `RNA blood cell specificity`, `RNA brain regional specificity`, `RNA cell line specificity`) |>
+  filter(Ensembl %in% c(hpa_contributing_transcripts, hpa_contributing_proteins)) 
+```
 
-desired_tissue_levels <- c(
-  "Tissue enriched",
-  "Group enriched",
-  "Tissue enhanced",
-  "Low tissue specificity",
-  "Not detected"
-)
-
-sankey_data <- sankey_data %>%
-  mutate(
-    `RNA tissue specificity` = factor(
-      `RNA tissue specificity`,
-      levels = desired_tissue_levels
-    )
-  )
-
-hpa_evidence_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No evidence"                  = "firebrick"
-)
-
-tissue_spec_colors <- c(
-  "Tissue enriched"         = "#E31A1B",
+```{r}
+# --- colors you provided
+spec_colors <- c(
+  "Dataset enriched"        = "#E31A1B",
   "Group enriched"          = "#FE9D00",
-  "Tissue enhanced"         = "#B65EC4",
-  "Low tissue specificity"  = "#7D7D7D",
-  "Not detected"            = "#E4E4E4"
+  "Dataset enhanced"        = "#B65EC4",
+  "Low dataset specificity" = "#7D7D7D",
+  "Not detected"            = "#E4E4E4",
 )
 
-all_colors <- c(hpa_evidence_colors, tissue_spec_colors)
+# -- pick your Ensembl set
+#ens_keep <- union(hpa_contributing_transcripts, hpa_contributing_proteins)
 
-p <- ggplot(
-  sankey_data,
-  aes(
-    axis1 = `HPA evidence`,
-    axis2 = `RNA tissue specificity`,
-    y     = Freq
+# --- helper: enforce factor order we want in the legend & stacks
+spec_levels <- c("Dataset enriched", "Group enriched", "Dataset enhanced",
+                 "Low dataset specificity", "Not detected")
+
+
+rna_long <- hpa_data_v24 %>%
+  select(
+    Ensembl,
+    `RNA tissue specificity`,
+    `RNA single cell type specificity`,
+    `RNA blood cell specificity`,
+    `RNA brain regional specificity`,
+    `RNA cell line specificity`
+  ) %>%
+  filter(Ensembl %in% ens_keep) %>%
+  # make sure these are character (in case they arrived as factors)
+  mutate(across(-Ensembl, as.character)) %>%
+  # Tissue
+  mutate(`RNA tissue specificity` = case_when(
+    `RNA tissue specificity` == "Tissue enriched"         ~ "Dataset enriched",
+    `RNA tissue specificity` == "Tissue enhanced"         ~ "Dataset enhanced",
+    `RNA tissue specificity` == "Low tissue specificity"  ~ "Low dataset specificity",
+    TRUE ~ `RNA tissue specificity`
+  )) %>%
+  # Single cell type
+  mutate(`RNA single cell type specificity` = case_when(
+    `RNA single cell type specificity` == "Cell type enriched"        ~ "Dataset enriched",
+    `RNA single cell type specificity` == "Cell type enhanced"        ~ "Dataset enhanced",
+    `RNA single cell type specificity` == "Low cell type specificity" ~ "Low dataset specificity",
+    TRUE ~ `RNA single cell type specificity`
+  )) %>%
+  # Blood cell
+  mutate(`RNA blood cell specificity` = case_when(
+    `RNA blood cell specificity` == "Immune cell enriched"           ~ "Dataset enriched",
+    `RNA blood cell specificity` == "Immune cell enhanced"           ~ "Dataset enhanced",
+    `RNA blood cell specificity` == "Low immune cell specificity"    ~ "Low dataset specificity",
+    `RNA blood cell specificity` == "Not detected in immune cells"   ~ "Not detected",
+    TRUE ~ `RNA blood cell specificity`
+  )) %>%
+  # Brain region
+  mutate(`RNA brain regional specificity` = case_when(
+    `RNA brain regional specificity` == "Region enriched"        ~ "Dataset enriched",
+    `RNA brain regional specificity` == "Region enhanced"        ~ "Dataset enhanced",
+    `RNA brain regional specificity` == "Low region specificity" ~ "Low dataset specificity",
+    TRUE ~ `RNA brain regional specificity`
+  )) %>%
+  # Cell line
+  mutate(`RNA cell line specificity` = case_when(
+    `RNA cell line specificity` == "Cancer enriched"        ~ "Dataset enriched",
+    `RNA cell line specificity` == "Cancer enhanced"        ~ "Dataset enhanced",
+    `RNA cell line specificity` == "Low cancer specificity" ~ "Low dataset specificity",
+    TRUE ~ `RNA cell line specificity`
+  )) %>%
+  pivot_longer(
+    cols = -Ensembl,
+    names_to = "Dataset",
+    values_to = "Specificity"
   )
-) +
-  geom_alluvium(aes(fill = `HPA evidence`),
-                width = 0.3, alpha = 0.8,
-                color = "gray50", size = 0.2) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 0.5, color = "black") +
-  geom_text(stat = "stratum",
-            aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
-            size = 4, vjust = 1.2) +
-  scale_x_discrete(
-    labels = c("HPA Evidence", "RNA Tissue Specificity"),
-    name   = NULL,
-    expand = c(.05, .05)
+
+# Optional: tidy dataset names for plotting
+dataset_labels <- c(
+  "RNA tissue specificity"             = "Tissue",
+  "RNA single cell type specificity"   = "Single cell type",
+  "RNA blood cell specificity"         = "Blood cell",
+  "RNA brain regional specificity"     = "Brain region",
+  "RNA cell line specificity"          = "Cell line"
+)
+
+rna_long <- rna_long %>%
+  mutate(
+    Dataset = recode(Dataset, !!!dataset_labels),
+    # keep only our five legend categories (+ Group enriched will pass through unchanged)
+    Specificity = factor(Specificity, levels = spec_levels)
+  )
+
+# 2) Count distinct Ensembl per Dataset x Specificity
+counts <- rna_long %>%
+  filter(!is.na(Specificity) & Specificity %in% spec_levels) %>%
+  group_by(Dataset, Specificity) %>%
+  summarise(n = n_distinct(Ensembl), .groups = "drop")
+
+# Ensure all combinations exist (so missing categories still show as zero-height stacks)
+counts <- counts %>%
+  tidyr::complete(Dataset, Specificity = factor(spec_levels, levels = spec_levels), fill = list(n = 0))
+
+# 3) Compute totals per Dataset for label
+totals <- counts %>%
+  group_by(Dataset) %>%
+  summarise(total = sum(n), .groups = "drop")
+
+# text colors that contrast with your fills
+text_colors <- c(
+  "Dataset enriched"        = "white",
+  "Group enriched"          = "white",
+  "Dataset enhanced"        = "white",
+  "Low dataset specificity" = "black",
+  "Not detected"            = "black"
+)
+
+# build labels (avoid printing zeros)
+counts_lbl <- counts %>%
+  mutate(label = ifelse(n > 0, paste0("n = ", n), ""))
+
+p_stacked <- ggplot(counts_lbl, aes(x = Dataset, y = n, fill = Specificity)) +
+  geom_col(width = 0.75, color = "black", linewidth = 0.25) +
+  geom_text(
+    aes(label = label, color = Specificity),
+    position = position_stack(vjust = 0.5),
+    size = 3.3,
+    fontface = "bold",
+    show.legend = FALSE
   ) +
-  scale_fill_manual(values = all_colors) +
+  scale_fill_manual(values = spec_colors, drop = FALSE) +
+  scale_color_manual(values = text_colors, guide = "none") +
   labs(
-    title = sprintf("HPA evidence → RNA tissue specificity\n(n = %d genes)", sum(sankey_data$Freq)),
-    y     = "Number of Genes",
-    fill  = "Category"
+    x = NULL,
+    y = "Number of genes",
+    fill = "Specificity",
+    title = "RNA specificity across datasets (stacked by specificity class)"
   ) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 12) +
   theme(
     legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 11)
   )
 
-print(p)
+p_stacked
 
-ggsave("../plots/pdf/Figure 3/Figure 3E.pdf", p, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3E.png", p, width = 10, height = 7, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3F new.pdf", p_stacked, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3F new.png", p_stacked, width = 10, height = 7, dpi = 300)
 ```
 
-## Tissue
+## nTPM per dataset
+
+### Density plot
 
 ```{r}
-
-```
-
-## UMAP: 
-
-### HPA contributing genes
-
-```{r}
-hpa_contributing_tissue_detected_genes <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
-    by = "Ensembl"
-  ) %>%
-  mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
-  ) %>%
+# 1) Filter based on Ensembl IDs in filtered_ensembl
+df_ridges_filtered <- hpa_data |>
   filter(
-    `Uniprot evidence` %in% c(
-      "No evidence",
-      "Protein uncertain (PE5)",
-      "Protein predicted (PE4)",
-      "Protein inferred from homology (PE3)"
-    ),
-    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
-  ) %>%
-  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
-  filter(`RNA tissue specificity` != "Not detected")
-
-umap_data <- tissue_data %>%
-  rename(Ensembl = Gene) |>
-  filter(Ensembl %in% hpa_contributing_tissue_detected_genes$Ensembl) |>
-  inner_join(hpa_contributing_tissue_detected_genes |> select(Ensembl, `HPA evidence`, `RNA tissue specificity`), by = "Ensembl") |>
-  mutate(`RNA tissue specificity` = factor(`RNA tissue specificity`, levels = c("Tissue enriched", "Group enriched", "Tissue enhanced", "Low tissue specificity")))
-
-umap_hd <- hd_umap(dat = umap_data |> 
-          select(Ensembl, Tissue, nTPM) |> 
-          pivot_wider(names_from = Ensembl, values_from = nTPM),
-        by_sample = FALSE,
-        impute = TRUE,
-        components = 2,
-        seed = 123)
-
-umap <- umap_hd$umap_res |>
-  rename(Ensembl = Features) |>
-  inner_join(umap_data, by = "Ensembl")
-```
-
-#### RNA tissue specificity
-
-```{r}
-p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `RNA tissue specificity`, shape = `HPA evidence`)) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_brewer(palette = "Set1") +
-  scale_shape_manual(values = c(16, 17, 18, 15)) + 
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-p_umap
-
-ggsave("../plots/pdf/Figure 3/Figure 3F.pdf", p_umap, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3F.png", p_umap, width = 10, height = 7, dpi = 300)
-```
-
-#### HPA evidence
-
-```{r}
-p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE), aes(x = UMAP1, y = UMAP2, color = `HPA evidence`, shape = `RNA tissue specificity`)) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_brewer(palette = "Set1") +
-  scale_shape_manual(values = c(16, 17, 18, 15)) +
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-p_umap
-
-ggsave("../plots/pdf/Figure 3/Figure 3G.pdf", p_umap, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3G.png", p_umap, width = 10, height = 7, dpi = 300)
-```
-
-#### Max tissue
-
-```{r}
-max_tissue_per_gene <- umap %>% 
-  group_by(Ensembl) %>%
-  slice_max(nTPM, with_ties = FALSE) %>%
-  ungroup() %>% 
-  select(Ensembl, Tissue, nTPM) %>% 
-  rename(
-    `Max tissue` = Tissue,
-    `Max nTPM`   = nTPM
-  )
-
-p_umap <- ggplot(umap |> distinct(Ensembl, .keep_all = TRUE) |>
-                   inner_join(max_tissue_per_gene, by = "Ensembl"), 
-                 aes(x = UMAP1, y = UMAP2, color = `Max tissue`, shape = `HPA evidence`)) +
-  geom_point(size = 2, alpha = 0.7) +
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    color = "RNA Tissue Specificity",
-    shape = "HPA Evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-p_umap
-
-max_tissue_per_gene |>
-  count(`Max tissue`, name = "Number of genes") |>
-  arrange(desc(`Number of genes`))
-```
-
-#### Highlighting max tissue
-
-```{r}
-highlighted <- c(
-  "bone marrow", "brain", "intestine", "liver",
-  "lymphoid tissue", "retina", "skeletal muscle", "testis"
-)
-
-tissue_colours <- c(
-  "bone marrow"     = "#1b9e77",
-  "brain"           = "#d95f02",
-  "intestine"       = "#7570b3",
-  "liver"           = "#e7298a",
-  "lymphoid tissue" = "#66a61e",
-  "retina"          = "#e6ab02",
-  "skeletal muscle" = "#a6761d",
-  "testis"          = "#666666",
-  "Other"           = "grey80"
-)
-
-max_tissue_per_gene <- umap %>% 
-  group_by(Ensembl) %>% 
-  slice_max(nTPM, with_ties = FALSE) %>% 
-  ungroup() %>% 
-  select(Ensembl, Tissue, nTPM) %>% 
-  rename(
-    `Max tissue` = Tissue,
-    `Max nTPM`   = nTPM
-  ) %>% 
+    Ensembl %in% ens_keep,
+    !Dataset %in% c("immunocytochemistry", "Western blot", "Immunohistochemistry"),
+    `HPA evidence` %in% c("Evidence at transcript level", "Evidence at protein level")
+  ) |>
   mutate(
-    Tissue_group = if_else(
-      `Max tissue` %in% highlighted,
-      `Max tissue`,
-      "Other"
-    ) %>% 
-      factor(levels = c(highlighted, "Other"))
+    `HPA evidence` = factor(
+      `HPA evidence`,
+      levels = c("Evidence at transcript level", "Evidence at protein level")
+    )
   )
 
-p_umap <- umap %>% 
-  distinct(Ensembl, .keep_all = TRUE) %>% 
-  inner_join(max_tissue_per_gene, by = "Ensembl") %>% 
-  ggplot(aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = Tissue_group,
-    shape = `HPA evidence`
-  )) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_manual(
-    values = c(tissue_colours, Other = "grey80"),
-    name   = "Max tissue"
-  ) +
-  labs(
-    title = "UMAP of HPA Contributing Genes",
-    x = "UMAP1",
-    y = "UMAP2",
-    shape = "HPA evidence"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    axis.text.y     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-print(p_umap)
-```
-
-#### K-means clustering
-
-```{r}
-plot_data <- umap %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  select(Ensembl, UMAP1, UMAP2, `HPA evidence`) %>%
-  mutate(
-    EvidenceType = factor(`HPA evidence`,
-                          levels = c("Evidence at protein level",
-                                     "Evidence at transcript level"),
-                          labels = c("protein", "transcript"))
-  )
-
-set.seed(42)
-clusters <- kmeans(plot_data[, c("UMAP1","UMAP2")],
-                   centers = 10, iter.max = 100, nstart = 100)
-
-plot_data <- plot_data %>%
-  mutate(Cluster = factor(clusters$cluster))
-
-centers <- as.data.frame(clusters$centers) %>%
-  mutate(Cluster = factor(1:nrow(.)))
-
-p_umap_cluster <- ggplot(plot_data, aes(x = UMAP1, y = UMAP2)) +
-  geom_point(
-    aes(fill  = Cluster,
-        shape = EvidenceType),
-    color  = "black",
-    size   = 2.5,
-    stroke = 0.7,
-    alpha  = 0.7
-  ) +
-  geom_point(
-    data = centers,
-    aes(x = UMAP1, y = UMAP2),
-    shape  = 4,
-    size   = 4,
-    stroke = 1.5,
-    color  = "black"
-  ) +
-  scale_fill_brewer(
-    "Cluster",
-    palette = "Set3",
-    guide   = guide_legend(
-      override.aes = list(
-        shape  = 21,
-        color  = "black",
-        size   = 4,
-        alpha  = 1
-      )
+# 2) Plot
+ggplot(df_ridges_filtered,
+       aes(x = log10(max_ntpm + 1), y = `HPA evidence`, fill = `HPA evidence`)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.6) +
+  geom_density_ridges(rel_min_height = 0.01, scale = 1.2, alpha = 0.8, color = "white") +
+  facet_wrap(~ Dataset, ncol = 1, scales = "free_y") +
+  scale_fill_manual(
+    values = c(
+      "Evidence at transcript level" = "darkorange",
+      "Evidence at protein level"    = "darkgreen"
     )
   ) +
-  scale_shape_manual(
-    "Evidence Type",
-    values = c(protein    = 21,
-               transcript = 24)
-  ) +
   labs(
-    title =  "UMAP + K-means (k = 10) with Evidence Shapes",
-    x     =  "UMAP 1",
-    y     =  "UMAP 2"
+    title = "Filtered genes: Distribution of log10(max nTPM) by HPA evidence and Dataset",
+    x = "log10(max nTPM + 1)",
+    y = "HPA evidence",
+    fill = "HPA evidence"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    plot.title       = element_text(face = "bold", hjust = 0.5),
-    legend.position  = "right",
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_blank()
+    legend.position = "none",
+    strip.text = element_text(face = "bold")
   )
 
-p_umap_cluster
+ggsave("../plots/pdf/Figure 3/Figure 3G new.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3G new.png", width = 10, height = 7, dpi = 300)
+```
 
-ggsave("../plots/pdf/Figure 3/Figure 3H.pdf", p_umap_cluster, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3H.png", p_umap_cluster, width = 10, height = 7, dpi = 300)
+
+### Violin
+
+```{r}
+hpa_data |>
+  filter(Ensembl %in% ens_keep) |>
+  filter(!Dataset %in% c("Immunocytochemistry", "Immunohistochemistry", "Western blot")) |>
+  filter(`HPA evidence` %in% c("Evidence at transcript level", "Evidence at protein level")) |>
+  select(Ensembl, Dataset, `Evidence_type`, max_ntpm, `HPA evidence`)
 ```
 
 ```{r}
-max_tissue_per_gene <- umap %>%
-  group_by(Ensembl) %>%
-  slice_max(nTPM, with_ties = FALSE) %>%
-  ungroup() %>%
-  select(Ensembl, Tissue, nTPM) %>%
-  rename(
-    `Max tissue` = Tissue,
-    `Max nTPM`   = nTPM
-  )
+# Colors for HPA evidence categories
+hpa_colors <- c(
+  "Evidence at protein level"    = "darkgreen",
+  "Evidence at transcript level" = "darkorange"
+)
 
-plot_data <- umap %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  select(Ensembl, UMAP1, UMAP2, `HPA evidence`) %>%
-  mutate(
-    EvidenceType = factor(`HPA evidence`,
-                          levels = c("Evidence at protein level","Evidence at transcript level"),
-                          labels = c("protein","transcript"))
-  ) %>%
-  { 
-    kms <- kmeans(select(., UMAP1, UMAP2), centers=10, nstart=100)
-    mutate(., Cluster = factor(kms$cluster))
-  }
+# Filter and prepare data
+df_violin <- hpa_data %>%
+  filter(Ensembl %in% ens_keep) %>%
+  filter(!Dataset %in% c("immunocytochemistry", "Immunohistochemistry", "Western blot")) %>%
+  filter(`HPA evidence` %in% c("Evidence at transcript level", "Evidence at protein level")) %>%
+  select(Ensembl, Dataset, max_ntpm, `HPA evidence`) %>%
+  distinct(Ensembl, Dataset, `HPA evidence`, .keep_all = TRUE) %>%
+  mutate(log10_max_ntpm = log10(max_ntpm + 1)) # +1 to handle zeros
 
-plot_data2 <- plot_data %>%
-  inner_join(max_tissue_per_gene, by="Ensembl")
-
-ggplot(plot_data2, aes(x=Cluster, fill=`Max tissue`)) +
-  geom_bar() +
-  labs(
-    title = "Count of genes’ max‐expressed tissue per k‐means cluster",
-    x     = "Cluster",
-    y     = "Number of genes",
-    fill  = "Max tissue"
+# Violin plot
+p_violin <- ggplot(
+  df_violin,
+  aes(x = Dataset, y = log10_max_ntpm, fill = `HPA evidence`)
+) +
+  geom_violin(
+    aes(group = interaction(Dataset, `HPA evidence`)),
+    position = position_dodge(width = 0.8),
+    scale = "width",
+    trim = TRUE,
+    alpha = 0.7,
+    color = "grey30",
+    linewidth = 0.3
   ) +
-  theme_minimal(base_size=13) +
+  geom_point(
+    aes(color = `HPA evidence`),
+    position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8),
+    size = 1.2,
+    alpha = 0.6,
+    stroke = 0
+  ) +
+  scale_fill_manual(values = hpa_colors, name = "HPA evidence") +
+  scale_color_manual(values = hpa_colors, guide = "none") +
+  labs(
+    title = "log10(max_nTPM) per dataset, split by HPA evidence",
+    x = NULL,
+    y = "log10(max_nTPM + 1)"
+  ) +
+  theme_minimal(base_size = 13) +
   theme(
-    plot.title       = element_text(face="bold", hjust=0.5),
-    axis.text.x      = element_text(angle=45, hjust=1),
-    panel.grid.major = element_line(color="grey90"),
-    panel.grid.minor = element_blank()
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    panel.grid.major.x = element_blank()
   )
+
+p_violin
 
 ```
 
+## Bars
+
+### Tissue
+
 ```{r}
-hpa_max_filt <- max_tissue_per_gene %>%
-  group_by(Ensembl) %>%
-  filter(`Max nTPM` == max(`Max nTPM`, na.rm = TRUE)) %>%
-  slice(1) %>%
-  ungroup() |>
-  inner_join(
-    hpa_data |> distinct(Ensembl, .keep_all = TRUE) |> select(Ensembl, `HPA evidence`),
-    by = "Ensembl"
+# 1. Filter to genes of interest
+hpa_data_filt <- hpa_data_v24 %>%
+  filter(Ensembl %in% ens_keep)
+
+# 2. Expand the tissue/nTPM string into long format
+hpa_long_filt <- hpa_data_filt %>%
+  filter(!is.na(`RNA tissue specific nTPM`)) %>%
+  mutate(
+    tissue_value = str_split(`RNA tissue specific nTPM`, ";")
+  ) %>%
+  unnest(tissue_value) %>%
+  mutate(
+    tissue_value = str_trim(tissue_value),
+    tissue = str_extract(tissue_value, "^[^:]+"),
+    nTPM = as.numeric(str_extract(tissue_value, "(?<=: )\\d+\\.?\\d*"))
   )
 
-ggplot(hpa_max_filt, aes(x = `Max tissue`, fill = `HPA evidence`)) +
+# 3. For each Ensembl, keep only the tissue with the max nTPM
+hpa_max_filt <- hpa_long_filt %>%
+  group_by(Ensembl) %>%
+  filter(nTPM == max(nTPM, na.rm = TRUE)) %>%
+  slice(1) %>%  # in case of ties
+  ungroup()
+
+# 4. Plot
+ggplot(hpa_max_filt, aes(x = tissue, fill = `HPA evidence`)) +
   geom_bar(position = "stack") +
   labs(
     title = "Filtered genes: Number per tissue (by max nTPM), colored by HPA evidence",
@@ -866,249 +732,10 @@ ggplot(hpa_max_filt, aes(x = `Max tissue`, fill = `HPA evidence`)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3L.pdf", width = 24, height = 10, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3L.png", width = 24, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3H new.pdf", width = 14, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3H new.png", width = 14, height = 10, dpi = 300)
 ```
 
-
-```{r}
-highlighted <- c(
-  "bone marrow", "cerwbellum", "epididymis", "cerebral cortex", "duodenum",
-  "liver", "retina", "skeletal muscle", "testis", "skin", "thymus", "tonsil",
-  "Other"
-)
-tissue_colours <- c(
-  "bone marrow"     = "#1b9e77",
-  "cerebellum"      = "#d95f02",
-  "epididymis"      = "#757",
-  "cerebral cortex" = "#7570b3",
-  "duodenum"        = "#e7298a",
-  "liver"           = "brown",
-  "retina"          = "#e6ab02",
-  "skeletal muscle" = "#a6761d",
-  "testis"          = "#666666",
-  "skin"            = "#8B4513",
-  "thymus"          = "#D2B48C",
-  "tonsil"          = "#66a61e",
-  "Other"           = "grey80"
-)
-
-max_tissue_per_gene <- umap %>%
-  group_by(Ensembl) %>%
-  slice_max(nTPM, with_ties = FALSE) %>%
-  ungroup() %>%
-  select(Ensembl, Max.tissue = Tissue, Max.nTPM = nTPM)
-
-plot_data <- umap %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  select(Ensembl, UMAP1, UMAP2, `HPA evidence`) %>%
-  mutate(
-    EvidenceType = factor(
-      `HPA evidence`,
-      levels = c("Evidence at protein level","Evidence at transcript level"),
-      labels = c("protein","transcript")
-    )
-  ) %>%
-  { kms <- kmeans(select(., UMAP1, UMAP2), centers = 10, nstart = 100)
-    mutate(., Cluster = factor(kms$cluster)) }
-
-plot_data2 <- plot_data %>%
-  inner_join(max_tissue_per_gene, by = "Ensembl") %>%
-  mutate(
-    `Max tissue` = if_else(
-      Max.tissue %in% highlighted,
-      Max.tissue,
-      "Other"
-    ) %>% factor(levels = names(tissue_colours))
-  )
-
-ggplot(plot_data2, aes(x = Cluster, fill = `Max tissue`)) +
-  geom_bar() +
-  scale_fill_manual(
-    "Max tissue",
-    values = tissue_colours
-  ) +
-  labs(
-    title = "Max‐expressed tissue per k‐means cluster",
-    x     = "Cluster",
-    y     = "Number of genes"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    plot.title       = element_text(face = "bold", hjust = 0.5),
-    axis.text.x      = element_text(angle = 45, hjust = 1),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_blank()
-  )
-
-ggsave("../plots/pdf/Figure 3/Figure 3I.pdf", width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3I.png", width = 10, height = 7, dpi = 300)
-```
-
-```{r}
-ggplot(plot_data2, aes(x = Cluster, fill = `Max tissue`)) +
-  geom_bar(position = "fill") +
-  scale_y_continuous(
-    labels = scales::percent_format(accuracy = 1),
-    expand = expansion(mult = c(0, 0.02))
-  ) +
-  scale_fill_manual(
-    "Max tissue",
-    values = tissue_colours
-  ) +
-  labs(
-    title = "Percentage of genes’ max‐expressed tissue per k‐means cluster",
-    x     = "Cluster",
-    y     = "Proportion of genes"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    plot.title       = element_text(face = "bold", hjust = 0.5),
-    axis.text.x      = element_text(angle = 45, hjust = 1),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_blank()
-  )
-
-ggsave("../plots/pdf/Figure 3/Figure 3J.pdf", width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3J.png", width = 10, height = 7, dpi = 300)
-```
-
-
-```{r}
-plot_data2 <- umap %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  select(Ensembl, UMAP1, UMAP2, `HPA evidence`) %>%
-  mutate(
-    EvidenceType = factor(
-      `HPA evidence`,
-      levels = c("Evidence at protein level", "Evidence at transcript level"),
-      labels = c("protein", "transcript")
-    )
-  ) %>%
-  { 
-    set.seed(42)
-    kms <- kmeans(select(., UMAP1, UMAP2), centers = 10, nstart = 100)
-    mutate(., Cluster = factor(kms$cluster))
-  }
-
-ggplot(plot_data2, aes(x = Cluster, fill = EvidenceType)) +
-  geom_bar() +
-  scale_fill_manual(
-    name = "HPA Evidence",
-    values = c(protein    = "darkgreen",
-               transcript = "darkorange")
-  ) +
-  labs(
-    title = "Genes with Protein vs Transcript Evidence, by Cluster",
-    x     = "K-means Cluster",
-    y     = "Gene count"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    plot.title      = element_text(face = "bold", hjust = 0.5),
-    axis.text.x     = element_text(angle = 45, hjust = 1),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_blank()
-  )
-```
-
-```{r}
-plot_data2 <- umap %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  select(Ensembl, UMAP1, UMAP2, `HPA evidence`) %>%
-  mutate(
-    EvidenceType = factor(
-      `HPA evidence`,
-      levels = c("Evidence at protein level", "Evidence at transcript level"),
-      labels = c("protein", "transcript")
-    )
-  ) %>%
-  { 
-    set.seed(42)
-    kms <- kmeans(select(., UMAP1, UMAP2), centers = 10, nstart = 100)
-    mutate(., Cluster = factor(kms$cluster))
-  }
-
-ggplot(plot_data2, aes(x = Cluster, fill = EvidenceType)) +
-  geom_bar(position = "fill") +
-  scale_fill_manual(
-    name = "HPA Evidence",
-    values = c(protein    = "darkgreen",
-               transcript = "darkorange")
-  ) +
-  scale_y_continuous(
-    labels = percent_format(accuracy = 1),
-    expand = expansion(mult = c(0, 0.02))
-  ) +
-  labs(
-    title = "Fraction of Protein vs Transcript Evidence per Cluster",
-    x     = "K‐means Cluster",
-    y     = "Proportion of Genes"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    plot.title       = element_text(face = "bold", hjust = 0.5),
-    axis.text.x      = element_text(angle = 45, hjust = 1),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_blank()
-  )
-```
-
-## Wordcloud
-
-```{r}
-filtered_hpa <- hpa_data_v24 |>
-  filter(Ensembl %in% hpa_contributing_genes$Ensembl)
-
-make_ggtreemap <- function(df, column, max_categories = 50, title = "Treemap") {
-  items <- df %>%
-    dplyr::pull({{ column }}) %>%
-    stringr::str_split(",") %>%
-    unlist() %>%
-    na.omit() %>%
-    stringr::str_trim() %>%
-    .[. != ""]
-  
-  tab <- as.data.frame(table(items))
-  tab <- tab %>% arrange(desc(Freq)) %>% head(max_categories)
-  
-  ggplot(tab, aes(area = Freq, fill = items, label = items)) +
-    geom_treemap(show.legend = FALSE) +
-    geom_treemap_text(
-      colour    = "white",
-      place     = "center",
-      grow      = TRUE,
-      reflow    = TRUE,
-      min.size  = 3
-    ) +
-    labs(title = title) +
-    theme(
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
-    )
-}
-
-
-treemap_columns <- c(
-#  "Chromosome", 
-  "Protein class", 
-  "Biological process", 
-  "Molecular function", 
-  "Disease involvement", 
-  "Subcellular location", 
-  "Secretome location"
-)
-
-treemap_plots <- lapply(treemap_columns, function(col) {
-  make_ggtreemap(filtered_hpa, !!sym(col), title = col)
-})
-
-combined_plot <- wrap_plots(treemap_plots, ncol = 2)
-
-print(combined_plot)
-
-ggsave("../plots/pdf/Figure 3/Figure 3K.pdf", width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3K.png", width = 10, height = 7, dpi = 300)
-```
 
 # Supplementary
 
@@ -1332,6 +959,118 @@ upset_hpa_uniprot <- ComplexUpset::upset(
 
 upset_hpa_uniprot
 ```
+
+## Sankey plots
+
+### Tissue
+
+```{r}
+sankey_data <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) %>%
+  full_join(
+    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
+    by = "Ensembl"
+  ) %>%
+  mutate(
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+  ) %>%
+  filter(
+    `Uniprot evidence` %in% c(
+      "No evidence",
+      "Protein uncertain (PE5)",
+      "Protein predicted (PE4)",
+      "Protein inferred from homology (PE3)"
+    ),
+    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
+  ) %>%
+  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
+  count(`HPA evidence`, `RNA tissue specificity`, name = "Freq")
+
+desired_tissue_levels <- c(
+  "Tissue enriched",
+  "Group enriched",
+  "Tissue enhanced",
+  "Low tissue specificity",
+  "Not detected"
+)
+
+sankey_data <- sankey_data %>%
+  mutate(
+    `RNA tissue specificity` = factor(
+      `RNA tissue specificity`,
+      levels = desired_tissue_levels
+    )
+  )
+
+hpa_evidence_colors <- c(
+  "Evidence at protein level"    = "darkgreen",
+  "Evidence at transcript level" = "darkorange",
+  "No evidence"                  = "firebrick"
+)
+
+tissue_spec_colors <- c(
+  "Tissue enriched"         = "#E31A1B",
+  "Group enriched"          = "#FE9D00",
+  "Tissue enhanced"         = "#B65EC4",
+  "Low tissue specificity"  = "#7D7D7D",
+  "Not detected"            = "#E4E4E4"
+)
+
+all_colors <- c(hpa_evidence_colors, tissue_spec_colors)
+
+p <- ggplot(
+  sankey_data,
+  aes(
+    axis1 = `HPA evidence`,
+    axis2 = `RNA tissue specificity`,
+    y     = Freq
+  )
+) +
+  geom_alluvium(aes(fill = `HPA evidence`),
+                width = 0.3, alpha = 0.8,
+                color = "gray50", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5, color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
+            size = 4, vjust = 1.2) +
+  scale_x_discrete(
+    labels = c("HPA Evidence", "RNA Tissue Specificity"),
+    name   = NULL,
+    expand = c(.05, .05)
+  ) +
+  scale_fill_manual(values = all_colors) +
+  labs(
+    title = sprintf("HPA evidence → RNA tissue specificity\n(n = %d genes)", sum(sankey_data$Freq)),
+    y     = "Number of Genes",
+    fill  = "Category"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x     = element_text(size = 14, face = "bold"),
+    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+
+print(p)
+
+ggsave("../plots/pdf/Figure 3/Figure 3E.pdf", p, width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3E.png", p, width = 10, height = 7, dpi = 300)
+```
+
+### Cell-type
+
+```{r}
+
+```
+
+
+### Immune
+
+### Cell line
+
+### Brain
+
 
 # SessionInfo
 
