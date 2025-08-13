@@ -15,6 +15,7 @@ library(writexl)
 library(scales)
 library(patchwork)
 library(ggridges)
+library(grid)
 ```
 
 # Load data
@@ -446,6 +447,7 @@ spec_levels <- c("Dataset enriched", "Group enriched", "Dataset enhanced",
 rna_long <- hpa_data_v24 %>%
   select(
     Ensembl,
+    `HPA evidence`,
     `RNA tissue specificity`,
     `RNA single cell type specificity`,
     `RNA blood cell specificity`,
@@ -492,7 +494,7 @@ rna_long <- hpa_data_v24 %>%
     TRUE ~ `RNA cell line specificity`
   )) %>%
   pivot_longer(
-    cols = -Ensembl,
+    cols = -c(Ensembl, `HPA evidence`),
     names_to = "Dataset",
     values_to = "Specificity"
   )
@@ -501,7 +503,7 @@ rna_long <- hpa_data_v24 %>%
 dataset_labels <- c(
   "RNA tissue specificity"             = "Tissue",
   "RNA single cell type specificity"   = "Single cell type",
-  "RNA blood cell specificity"         = "Blood cell",
+  "RNA blood cell specificity"         = "Immune cell",
   "RNA brain regional specificity"     = "Brain region",
   "RNA cell line specificity"          = "Cell line"
 )
@@ -571,6 +573,75 @@ p_stacked
 ggsave("../plots/pdf/Figure 3/Figure 3F new.pdf", p_stacked, width = 10, height = 7, dpi = 300)
 ggsave("../plots/png/Figure 3/Figure 3F new.png", p_stacked, width = 10, height = 7, dpi = 300)
 ```
+
+```{r}
+# --- palette & order (reuse your previous ones)
+spec_colors <- c(
+  "Dataset enriched"        = "#E31A1B",
+  "Group enriched"          = "#FE9D00",
+  "Dataset enhanced"        = "#B65EC4",
+  "Low dataset specificity" = "#7D7D7D",
+  "Not detected"            = "#E4E4E4"
+)
+spec_levels <- c("Dataset enriched", "Group enriched", "Dataset enhanced",
+                 "Low dataset specificity", "Not detected")
+
+# Make sure HPA evidence has the order you want (Transcript first, then Protein)
+counts_lbl <- counts_lbl %>%
+  mutate(
+    `HPA evidence` = factor(
+      `HPA evidence`,
+      levels = c("Evidence at transcript level", "Evidence at protein level")
+    )
+  )
+
+# Optional: prettier bar labels under each bar
+hpa_labels <- c(
+  "Evidence at transcript level" = "Transcript\nEvidence",
+  "Evidence at protein level"    = "Protein\nEvidence"
+)
+
+# Plot: facets = datasets (horizontal), 2 bars per facet = the two evidence states
+p_side_by_side <- ggplot(
+  counts_lbl,
+  aes(x = `HPA evidence`, y = n, fill = Specificity)
+) +
+  geom_col(width = 0.55, color = "black", linewidth = 0.25) +
+  geom_text(
+    aes(label = ifelse(n > 0, paste0("n = ", n), "")),
+    position = position_stack(vjust = 0.5),
+    size = 3.0,
+    fontface = "bold",
+    lineheight = 0.9,
+    show.legend = FALSE
+  ) +
+  facet_wrap(~ Dataset, nrow = 1) +   # ← datasets horizontal
+  scale_x_discrete(labels = hpa_labels, drop = FALSE) +
+  scale_fill_manual(values = spec_colors, drop = FALSE) +
+  labs(
+    x = NULL,
+    y = "Number of genes",
+    fill = "Specificity",
+    title = "Stacked counts by specificity: Transcript vs Protein evidence (per dataset)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "right",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor  = element_blank(),
+    axis.text.x = element_text(size = 10),
+    strip.text.x = element_text(face = "bold"),
+    # add horizontal spacing between dataset panels
+    panel.spacing.x = unit(1.2, "lines"),
+    plot.margin = margin(t = 5, r = 10, b = 5, l = 10)
+  )
+
+p_side_by_side
+
+ggsave("../plots/pdf/Figure 3/Figure 3F new new.pdf", p_side_by_side, width = 14, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3F new new.png", p_side_by_side, width = 14, height = 7, dpi = 300)
+```
+
 
 ## nTPM per dataset
 
