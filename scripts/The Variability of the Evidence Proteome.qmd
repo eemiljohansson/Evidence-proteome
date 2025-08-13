@@ -11,6 +11,7 @@ library(pheatmap)
 library(RColorBrewer)
 library(patchwork)
 library(cowplot)
+library(readxl)
 ```
 
 # Load data
@@ -357,11 +358,87 @@ grid::grid.draw(fig1c$gtable)
 dev.off()
 ```
 
+## Most details
+
+```{r}
+# 1. Read the mapping file
+version_info <- read_excel("../data/Ensembl/ensembl_version_year.xlsx") %>%
+  rename(
+    ensembl_version = `Ensembl version`,
+    build           = `Build`,
+    release_year    = `Release year`
+  )
+
+# 2. Ensure ensembl_version is numeric (matching your heatmap matrix colnames)
+version_info <- version_info %>%
+  mutate(
+    ensembl_version = as.factor(ensembl_version),
+    build           = as.factor(build),
+    release_year    = as.factor(release_year)
+  )
+
+# 3. Order by version to match gene_version_matrix_t rownames
+version_info <- version_info %>%
+  filter(ensembl_version %in% as.numeric(rownames(gene_version_matrix_t))) %>%
+  arrange(ensembl_version) %>%
+  column_to_rownames("ensembl_version")
+
+# 4. Create row annotation (y-axis) for pheatmap
+annotation_row <- version_info[rownames(gene_version_matrix_t), , drop = FALSE]
+
+# 5. Annotation colors:
+#    - Ensembl version: gradient
+#    - Build: discrete
+#    - Release year: gradient
+ensembl_palette <- colorRampPalette(brewer.pal(9, "YlGnBu"))(length(unique(annotation_row$ensembl_version)))
+names(ensembl_palette) <- sort(unique(annotation_row$ensembl_version))
+
+build_palette <- setNames(
+  brewer.pal(length(unique(annotation_row$build)), "Set2"),
+  levels(annotation_row$build)
+)
+
+year_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(length(unique(annotation_row$release_year)))
+names(year_palette) <- sort(unique(annotation_row$release_year))
+
+annotation_colors_row <- list(
+  ensembl_version = ensembl_palette,
+  build           = build_palette,
+  release_year    = year_palette
+)
+
+# 6. Run pheatmap with row annotations
+fig1c_large <- pheatmap(
+  gene_version_matrix_t,
+  color = c("white", "darkgreen"),
+  cluster_rows = FALSE,
+  cluster_cols = TRUE,
+  legend_breaks = c(0, 1),
+  legend_labels = c("Absent", "Present"),
+  main = "Gene Presence Across Ensembl Versions",
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  annotation_col = annotation_col,      # existing column annotations
+  annotation_row = annotation_row,      # new row annotations
+  annotation_colors = c(annotation_colors, annotation_colors_row)
+)
+
+fig1c_large
+
+png(filename = "../plots/png/Figure 1/Figure 1C large.png", width = 24, height = 10, units = "in", res = 300)
+grid::grid.draw(fig1c_large$gtable)
+dev.off()
+
+pdf(file = "../plots/pdf/Figure 1/Figure 1C large.pdf", width = 24, height = 10)
+grid::grid.draw(fig1c_large$gtable)
+dev.off()
+```
+
 # Combine figures
 
 ```{r}
 fig1b_grob <- fig1b$gtable
-fig1c_grob <- fig1c$gtable
+fig1c_large_grob <- fig1c_large$gtable
 
 top_row <- cowplot::plot_grid(
   fig1a + 
@@ -374,7 +451,7 @@ top_row <- cowplot::plot_grid(
 
 figure_1 <- cowplot::plot_grid(
   top_row,
-  fig1c_grob,
+  fig1c_large_grob,
   labels = c("", "C"),
   label_size = 12,
   ncol = 1,
