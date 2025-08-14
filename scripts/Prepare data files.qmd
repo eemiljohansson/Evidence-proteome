@@ -34,7 +34,7 @@ uniprot_data_v24 <- uniprot_data_v24 |> rename(Ensembl = ensg_id, Gene = display
                                       `Uniprot evidence` == "Inferred from homology" ~ "Protein inferred from homology (PE3)",
                                       `Uniprot evidence` == "Predicted" ~ "Protein predicted (PE4)",
                                       `Uniprot evidence` == "Uncertain" ~ "Protein uncertain (PE5)",
-                                      TRUE ~ "No evidence")) |>
+                                      TRUE ~ "No human protein/transcript evidence")) |>
   distinct(Ensembl, .keep_all = TRUE) |> # Keep only the unique Ensembl genes
   select(Ensembl, Gene, UniProt, `Uniprot evidence`) |>
   mutate(Evidence_type = case_when(
@@ -266,8 +266,8 @@ summary_evidence <- hpa_evidence_v25 %>%
     .groups = "drop"
   ) %>%
   mutate(
-    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence at transcript level", "No evidence"),
-    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence at protein level", "No evidence")
+    `Evidence annotation (transcript)` = ifelse(RNA_evidence, "Evidence at transcript level", "No human protein/transcript evidence"),
+    `Evidence annotation (protein)` = ifelse(Protein_evidence, "Evidence at protein level", "No human protein/transcript evidence")
   )
 
 hpa_evidence_v25 <- hpa_evidence_v25 %>%
@@ -279,13 +279,17 @@ hpa_evidence_v25 <- hpa_evidence_v25 %>%
       `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
       `Evidence annotation (transcript)` != "Evidence at transcript level" & `Evidence annotation (protein)` == "Evidence at protein level" ~ "Evidence at protein level",
       `Evidence annotation (transcript)` == "Evidence at transcript level" & `Evidence annotation (protein)` != "Evidence at protein level" ~ "Evidence at transcript level",
-      TRUE ~ "No evidence"
+      TRUE ~ "No human protein/transcript evidence"
     ))
 ```
 
 ## Summarise
 
 ```{r}
+hpa_evidence_v25 |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  nrow()
+
 hpa_evidence_v25 %>%
   distinct(Ensembl, .keep_all = TRUE) %>%
   count(`Evidence annotation (transcript)`, `Evidence annotation (protein)`)
