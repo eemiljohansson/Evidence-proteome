@@ -77,7 +77,6 @@ hpa_data |> distinct(Ensembl, .keep_all = TRUE) |>
   write_xlsx("../tables/Figure 3/hpa_uniprot_no_entry.xlsx")
 ```
 
-
 # Overview of data
 
 ```{r}
@@ -142,80 +141,11 @@ select <- dplyr::select
 ## Sankey: Comparing HPA and UniProt evidence
 
 ```{r}
-sankey_data <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) |>
-  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
-  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No evidence",
-                                               TRUE ~ `Uniprot evidence`))  |>
-  # Remove gene entries in UniProt that does not exist in HPA
-  filter(Ensembl %in% hpa_data$Ensembl) |>
-  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
-
-evidence_colors <- c(hpa_colors, uniprot_colors)
-
-sankey_data <- sankey_data %>%
-  mutate(
-    `HPA evidence`     = factor(`HPA evidence`, levels = hpa_levels),
-    `Uniprot evidence` = factor(`Uniprot evidence`, levels = uniprot_levels)
-  )
-
-sankey_data_label <- sankey_data %>%
-  tidyr::pivot_longer(
-    cols = c(`HPA evidence`, `Uniprot evidence`),
-    names_to = "axis",
-    values_to = "stratum"
-  ) %>%
-  group_by(axis, stratum) %>%
-  summarise(count = sum(Freq), .groups = "drop") %>%
-  mutate(label = paste0(stratum, "\n(", count, ")"))
-
-ggplot(sankey_data,
-       aes(axis1 = `HPA evidence`,
-           axis2 = `Uniprot evidence`,
-           y     = Freq)) +
-  geom_alluvium(aes(fill = `HPA evidence`), width = 0.4, alpha = 0.8,
-                color = "black", size = 0.2) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 0.5,
-               color = "black"
-  )  +
-  geom_text(
-    stat = "stratum",
-    aes(
-      label = after_stat(
-        paste0(stratum, "\n(", ..count.., ")")
-      )
-    ),
-    size = 4,
-    vjust = 1.2
-  ) +
-  scale_x_discrete(
-    limits = c("HPA Evidence", "UniProt Evidence"),
-    expand = c(0.05, 0.05)
-  ) +
-  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
-  labs(
-    title = "Sankey Plot of HPA and UniProt Evidence Categories",
-    y = "Number of Genes",
-    fill = "Evidence Category"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "top"
-  )
-
-ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 16, height = 24, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3A.png", width = 16, height = 24, dpi = 300)
-```
-
-### Including non-similar entries
-
-```{r}
 # Colors
 hpa_colors_all <- c(
   "Evidence at protein level"                       = "darkgreen",
   "Evidence at transcript level"                    = "darkorange",
-  "No human protein/transcript evidence"            = "firebrick",
+  "No human protein/transcript evidence"            = "firebrick"
 )
 
 uniprot_colors_all <- c(
@@ -253,9 +183,7 @@ sankey_data <- hpa_data %>%
   # UniProt no entry
   mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No UniProt entry",
                                                TRUE ~ `Uniprot evidence`))  |>
-  # HPA no entry
-  mutate(`HPA evidence` = case_when (is.na(`HPA evidence`) ~ "No HPA entry",
-                                               TRUE ~ `HPA evidence`)) |>
+  filter(!is.na(`HPA evidence`)) |>
   count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
 
 evidence_colors <- c(hpa_colors_all, uniprot_colors_all)
@@ -310,81 +238,12 @@ ggplot(sankey_data,
   theme(
     legend.position = "top"
   )
+
+ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 16, height = 24, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3A.png", width = 16, height = 24, dpi = 300)
 ```
 
 ## Sankey: Highlighting only genes that have no UniProt evidence
-
-```{r}
-sankey_data <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) |>
-  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
-  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No human protein/transcript evidence",
-                                               TRUE ~ `Uniprot evidence`)) |>
-  filter(`Uniprot evidence` %in% c("No human protein/transcript evidence", "Protein uncertain (PE5)", "Protein predicted (PE4)", "Protein inferred from homology (PE3)")) |>
-  filter(`HPA evidence` != "No human protein/transcript evidence") %>%
-  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
-
-hpa_colors <- c(
-  "Evidence at protein level"            = "darkgreen",
-  "Evidence at transcript level"         = "darkorange",
-  "No human protein/transcript evidence" = "firebrick"
-)
-uniprot_colors <- c(
-  "Protein inferred from homology (PE3)" = "#cccccc",
-  "Protein predicted (PE4)"              = "#888888",
-  "Protein uncertain (PE5)"              = "#444444",
-  "No evidence"                          = "#111111"
-)
-evidence_colors <- c(hpa_colors, uniprot_colors)
-
-sankey_data <- sankey_data %>%
-  mutate(
-    `Uniprot evidence` = factor(
-      `Uniprot evidence`,
-      levels = c(
-        "Protein inferred from homology (PE3)",
-        "Protein predicted (PE4)",
-        "Protein uncertain (PE5)",
-        "No human protein/transcript evidence" 
-      )
-    )
-  )
-
-total_genes <- sum(sankey_data$Freq)
-
-ggplot(sankey_data,
-       aes(
-         axis1 = `Uniprot evidence`,
-         axis2 = `HPA evidence`,
-         y     = Freq
-       )
-) +
-  geom_alluvium(aes(fill = `Uniprot evidence`),
-                width = 0.4, alpha = 0.8,
-                color = "black", size = 0.2) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 0.5, color = "black") +
-  geom_text(
-    stat = "stratum",
-    aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
-    size = 4, vjust = 1.2
-  ) +
-  scale_x_discrete(
-    limits = c("UniProt", "HPA"),
-    labels = c("UniProt Evidence", "HPA Evidence"),
-    expand = c(0.05, 0.05)
-  ) +
-  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
-  labs(
-    title = sprintf("HPA contributing genes v.25 (n = %d)", total_genes),
-    y     = "Number of Genes",
-    fill  = "Evidence Category"
-  ) +
-  theme_minimal(base_size = 14)
-
-ggsave("../plots/pdf/Figure 3/Figure 3B.pdf", width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3B.png", width = 10, height = 7, dpi = 300)
-```
 
 ```{r}
 # Colors
@@ -480,7 +339,11 @@ ggplot(sankey_data,
     y     = "Number of Genes",
     fill  = "Evidence Category"
   ) +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  guides(fill = FALSE)
+
+ggsave("../plots/pdf/Figure 3/Figure 3B.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3B.png", width = 10, height = 7, dpi = 300)
 ```
 
 
@@ -496,11 +359,11 @@ hpa_contributing_proteins <- hpa_data %>%
     by = "Ensembl"
   ) %>%
   mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No UniProt entry")
   ) %>%
   filter(
     `Uniprot evidence` %in% c(
-      "No human protein/transcript evidence",
+      "No UniProt entry",
       "Protein uncertain (PE5)",
       "Protein predicted (PE4)",
       "Protein inferred from homology (PE3)"
@@ -611,11 +474,11 @@ hpa_contributing_transcripts <- hpa_data %>%
     by = "Ensembl"
   ) %>%
   mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No UniProt entry")
   ) %>%
   filter(
     `Uniprot evidence` %in% c(
-      "No human protein/transcript evidence",
+      "No UniProt entry",
       "Protein uncertain (PE5)",
       "Protein predicted (PE4)",
       "Protein inferred from homology (PE3)"
@@ -690,155 +553,7 @@ hpa_data_v24 %>%
 ```
 
 ```{r}
-# --- colors you provided
-spec_colors <- c(
-  "Dataset enriched"        = "#E31A1B",
-  "Group enriched"          = "#FE9D00",
-  "Dataset enhanced"        = "#B65EC4",
-  "Low dataset specificity" = "#7D7D7D",
-  "Not detected"            = "#E4E4E4",
-)
-
-# -- pick your Ensembl set
-#ens_keep <- union(hpa_contributing_transcripts, hpa_contributing_proteins)
-
-# --- helper: enforce factor order we want in the legend & stacks
-spec_levels <- c("Dataset enriched", "Group enriched", "Dataset enhanced",
-                 "Low dataset specificity", "Not detected")
-
-
-rna_long <- hpa_data_v24 %>%
-  select(
-    Ensembl,
-    `HPA evidence`,
-    `RNA tissue specificity`,
-    `RNA single cell type specificity`,
-    `RNA blood cell specificity`,
-    `RNA brain regional specificity`,
-    `RNA cell line specificity`
-  ) %>%
-  filter(Ensembl %in% ens_keep) %>%
-  # make sure these are character (in case they arrived as factors)
-  mutate(across(-Ensembl, as.character)) %>%
-  # Tissue
-  mutate(`RNA tissue specificity` = case_when(
-    `RNA tissue specificity` == "Tissue enriched"         ~ "Dataset enriched",
-    `RNA tissue specificity` == "Tissue enhanced"         ~ "Dataset enhanced",
-    `RNA tissue specificity` == "Low tissue specificity"  ~ "Low dataset specificity",
-    TRUE ~ `RNA tissue specificity`
-  )) %>%
-  # Single cell type
-  mutate(`RNA single cell type specificity` = case_when(
-    `RNA single cell type specificity` == "Cell type enriched"        ~ "Dataset enriched",
-    `RNA single cell type specificity` == "Cell type enhanced"        ~ "Dataset enhanced",
-    `RNA single cell type specificity` == "Low cell type specificity" ~ "Low dataset specificity",
-    TRUE ~ `RNA single cell type specificity`
-  )) %>%
-  # Blood cell
-  mutate(`RNA blood cell specificity` = case_when(
-    `RNA blood cell specificity` == "Immune cell enriched"           ~ "Dataset enriched",
-    `RNA blood cell specificity` == "Immune cell enhanced"           ~ "Dataset enhanced",
-    `RNA blood cell specificity` == "Low immune cell specificity"    ~ "Low dataset specificity",
-    `RNA blood cell specificity` == "Not detected in immune cells"   ~ "Not detected",
-    TRUE ~ `RNA blood cell specificity`
-  )) %>%
-  # Brain region
-  mutate(`RNA brain regional specificity` = case_when(
-    `RNA brain regional specificity` == "Region enriched"        ~ "Dataset enriched",
-    `RNA brain regional specificity` == "Region enhanced"        ~ "Dataset enhanced",
-    `RNA brain regional specificity` == "Low region specificity" ~ "Low dataset specificity",
-    TRUE ~ `RNA brain regional specificity`
-  )) %>%
-  # Cell line
-  mutate(`RNA cell line specificity` = case_when(
-    `RNA cell line specificity` == "Cancer enriched"        ~ "Dataset enriched",
-    `RNA cell line specificity` == "Cancer enhanced"        ~ "Dataset enhanced",
-    `RNA cell line specificity` == "Low cancer specificity" ~ "Low dataset specificity",
-    TRUE ~ `RNA cell line specificity`
-  )) %>%
-  pivot_longer(
-    cols = -c(Ensembl, `HPA evidence`),
-    names_to = "Dataset",
-    values_to = "Specificity"
-  )
-
-# Optional: tidy dataset names for plotting
-dataset_labels <- c(
-  "RNA tissue specificity"             = "Tissue",
-  "RNA single cell type specificity"   = "Single cell type",
-  "RNA blood cell specificity"         = "Immune cell",
-  "RNA brain regional specificity"     = "Brain region",
-  "RNA cell line specificity"          = "Cell line"
-)
-
-rna_long <- rna_long %>%
-  mutate(
-    Dataset = recode(Dataset, !!!dataset_labels),
-    # keep only our five legend categories (+ Group enriched will pass through unchanged)
-    Specificity = factor(Specificity, levels = spec_levels)
-  )
-
-# 2) Count distinct Ensembl per Dataset x Specificity
-counts <- rna_long %>%
-  filter(!is.na(Specificity) & Specificity %in% spec_levels) %>%
-  group_by(Dataset, Specificity) %>%
-  summarise(n = n_distinct(Ensembl), .groups = "drop")
-
-# Ensure all combinations exist (so missing categories still show as zero-height stacks)
-counts <- counts %>%
-  tidyr::complete(Dataset, Specificity = factor(spec_levels, levels = spec_levels), fill = list(n = 0))
-
-# 3) Compute totals per Dataset for label
-totals <- counts %>%
-  group_by(Dataset) %>%
-  summarise(total = sum(n), .groups = "drop")
-
-# text colors that contrast with your fills
-text_colors <- c(
-  "Dataset enriched"        = "white",
-  "Group enriched"          = "white",
-  "Dataset enhanced"        = "white",
-  "Low dataset specificity" = "black",
-  "Not detected"            = "black"
-)
-
-# build labels (avoid printing zeros)
-counts_lbl <- counts %>%
-  mutate(label = ifelse(n > 0, paste0("n = ", n), ""))
-
-p_stacked <- ggplot(counts_lbl, aes(x = Dataset, y = n, fill = Specificity)) +
-  geom_col(width = 0.75, color = "black", linewidth = 0.25) +
-  geom_text(
-    aes(label = label, color = Specificity),
-    position = position_stack(vjust = 0.5),
-    size = 3.3,
-    fontface = "bold",
-    show.legend = FALSE
-  ) +
-  scale_fill_manual(values = spec_colors, drop = FALSE) +
-  scale_color_manual(values = text_colors, guide = "none") +
-  labs(
-    x = NULL,
-    y = "Number of genes",
-    fill = "Specificity",
-    title = "RNA specificity across datasets (stacked by specificity class)"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    legend.position = "right",
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.text.x = element_text(size = 11)
-  )
-
-p_stacked
-
-ggsave("../plots/pdf/Figure 3/Figure 3F new.pdf", p_stacked, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3F new.png", p_stacked, width = 10, height = 7, dpi = 300)
-```
-
-```{r}
-# --- palette & order (reuse your previous ones)
+# --- colors & factor levels
 spec_colors <- c(
   "Dataset enriched"        = "#E31A1B",
   "Group enriched"          = "#FE9D00",
@@ -849,42 +564,92 @@ spec_colors <- c(
 spec_levels <- c("Dataset enriched", "Group enriched", "Dataset enhanced",
                  "Low dataset specificity", "Not detected")
 
-# Make sure HPA evidence has the order you want (Transcript first, then Protein)
-counts_lbl <- counts_lbl %>%
-  mutate(
-    `HPA evidence` = factor(
-      `HPA evidence`,
-      levels = c("Evidence at transcript level", "Evidence at protein level")
-    )
-  )
+# Dataset name mapping
+dataset_labels <- c(
+  "RNA tissue specificity"             = "Tissue",
+  "RNA single cell type specificity"   = "Single cell type",
+  "RNA blood cell specificity"         = "Immune cell",
+  "RNA brain regional specificity"     = "Brain region",
+  "RNA cell line specificity"          = "Cell line"
+)
 
-# Optional: prettier bar labels under each bar
+# Prettier HPA evidence labels
 hpa_labels <- c(
   "Evidence at transcript level" = "Transcript\nEvidence",
   "Evidence at protein level"    = "Protein\nEvidence"
 )
 
-# Plot: facets = datasets (horizontal), 2 bars per facet = the two evidence states
-p_side_by_side <- ggplot(
-  counts_lbl,
-  aes(x = `HPA evidence`, y = n, fill = Specificity)
-) +
+# --- Prepare data
+rna_long <- hpa_data_v24 %>%
+  select(
+    Ensembl, `HPA evidence`,
+    `RNA tissue specificity`,
+    `RNA single cell type specificity`,
+    `RNA blood cell specificity`,
+    `RNA brain regional specificity`,
+    `RNA cell line specificity`
+  ) %>%
+  filter(Ensembl %in% ens_keep) %>%
+  mutate(across(-c(Ensembl, `HPA evidence`), as.character)) %>%
+  mutate(`RNA tissue specificity` = recode(`RNA tissue specificity`,
+    "Tissue enriched" = "Dataset enriched",
+    "Tissue enhanced" = "Dataset enhanced",
+    "Low tissue specificity" = "Low dataset specificity"
+  ),
+  `RNA single cell type specificity` = recode(`RNA single cell type specificity`,
+    "Cell type enriched" = "Dataset enriched",
+    "Cell type enhanced" = "Dataset enhanced",
+    "Low cell type specificity" = "Low dataset specificity"
+  ),
+  `RNA blood cell specificity` = recode(`RNA blood cell specificity`,
+    "Immune cell enriched" = "Dataset enriched",
+    "Immune cell enhanced" = "Dataset enhanced",
+    "Low immune cell specificity" = "Low dataset specificity",
+    "Not detected in immune cells" = "Not detected"
+  ),
+  `RNA brain regional specificity` = recode(`RNA brain regional specificity`,
+    "Region enriched" = "Dataset enriched",
+    "Region enhanced" = "Dataset enhanced",
+    "Low region specificity" = "Low dataset specificity"
+  ),
+  `RNA cell line specificity` = recode(`RNA cell line specificity`,
+    "Cancer enriched" = "Dataset enriched",
+    "Cancer enhanced" = "Dataset enhanced",
+    "Low cancer specificity" = "Low dataset specificity"
+  )) %>%
+  pivot_longer(
+    cols = -c(Ensembl, `HPA evidence`),
+    names_to = "Dataset",
+    values_to = "Specificity"
+  ) %>%
+  mutate(
+    Dataset     = recode(Dataset, !!!dataset_labels),
+    Specificity = factor(Specificity, levels = spec_levels),
+    `HPA evidence` = factor(`HPA evidence`,
+      levels = c("Evidence at transcript level", "Evidence at protein level")
+    )
+  ) %>%
+  filter(`HPA evidence` %in% levels(`HPA evidence`))
+
+# --- Counts per Dataset x Evidence x Specificity
+counts_lbl <- rna_long %>%
+  group_by(Dataset, `HPA evidence`, Specificity) %>%
+  summarise(n = n_distinct(Ensembl), .groups = "drop") %>%
+  complete(Dataset, `HPA evidence`, Specificity,
+           fill = list(n = 0)) %>%
+  mutate(label = ifelse(n > 0, paste0("n = ", n), ""))
+
+# --- Plot: side-by-side bars within dataset facets
+p_side_by_side <- ggplot(counts_lbl, aes(x = `HPA evidence`, y = n, fill = Specificity)) +
   geom_col(width = 0.55, color = "black", linewidth = 0.25) +
-  geom_text(
-    aes(label = ifelse(n > 0, paste0("n = ", n), "")),
-    position = position_stack(vjust = 0.5),
-    size = 3.0,
-    fontface = "bold",
-    lineheight = 0.9,
-    show.legend = FALSE
-  ) +
-  facet_wrap(~ Dataset, nrow = 1) +   # ← datasets horizontal
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.0, fontface = "bold", lineheight = 0.9, show.legend = FALSE) +
+  facet_wrap(~ Dataset, nrow = 1) +
   scale_x_discrete(labels = hpa_labels, drop = FALSE) +
   scale_fill_manual(values = spec_colors, drop = FALSE) +
   labs(
-    x = NULL,
-    y = "Number of genes",
-    fill = "Specificity",
+    x = NULL, y = "Number of genes", fill = "Specificity",
     title = "Stacked counts by specificity: Transcript vs Protein evidence (per dataset)"
   ) +
   theme_minimal(base_size = 12) +
@@ -894,17 +659,16 @@ p_side_by_side <- ggplot(
     panel.grid.minor  = element_blank(),
     axis.text.x = element_text(size = 10),
     strip.text.x = element_text(face = "bold"),
-    # add horizontal spacing between dataset panels
     panel.spacing.x = unit(1.2, "lines"),
     plot.margin = margin(t = 5, r = 10, b = 5, l = 10)
   )
 
 p_side_by_side
 
-ggsave("../plots/pdf/Figure 3/Figure 3F new new.pdf", p_side_by_side, width = 14, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3F new new.png", p_side_by_side, width = 14, height = 7, dpi = 300)
+# Save plots
+ggsave("../plots/pdf/Figure 3/Figure 3E.pdf", p_side_by_side, width = 14, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3E.png", p_side_by_side, width = 14, height = 7, dpi = 300)
 ```
-
 
 ## nTPM per dataset
 
@@ -949,73 +713,8 @@ ggplot(df_ridges_filtered,
     strip.text = element_text(face = "bold")
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3G new.pdf", width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3G new.png", width = 10, height = 7, dpi = 300)
-```
-
-
-### Violin
-
-```{r}
-hpa_data |>
-  filter(Ensembl %in% ens_keep) |>
-  filter(!Dataset %in% c("Immunocytochemistry", "Immunohistochemistry", "Western blot")) |>
-  filter(`HPA evidence` %in% c("Evidence at transcript level", "Evidence at protein level")) |>
-  select(Ensembl, Dataset, `Evidence_type`, max_ntpm, `HPA evidence`)
-```
-
-```{r}
-# Colors for HPA evidence categories
-hpa_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange"
-)
-
-# Filter and prepare data
-df_violin <- hpa_data %>%
-  filter(Ensembl %in% ens_keep) %>%
-  filter(!Dataset %in% c("immunocytochemistry", "Immunohistochemistry", "Western blot")) %>%
-  filter(`HPA evidence` %in% c("Evidence at transcript level", "Evidence at protein level")) %>%
-  select(Ensembl, Dataset, max_ntpm, `HPA evidence`) %>%
-  distinct(Ensembl, Dataset, `HPA evidence`, .keep_all = TRUE) %>%
-  mutate(log10_max_ntpm = log10(max_ntpm + 1)) # +1 to handle zeros
-
-# Violin plot
-p_violin <- ggplot(
-  df_violin,
-  aes(x = Dataset, y = log10_max_ntpm, fill = `HPA evidence`)
-) +
-  geom_violin(
-    aes(group = interaction(Dataset, `HPA evidence`)),
-    position = position_dodge(width = 0.8),
-    scale = "width",
-    trim = TRUE,
-    alpha = 0.7,
-    color = "grey30",
-    linewidth = 0.3
-  ) +
-  geom_point(
-    aes(color = `HPA evidence`),
-    position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8),
-    size = 1.2,
-    alpha = 0.6,
-    stroke = 0
-  ) +
-  scale_fill_manual(values = hpa_colors, name = "HPA evidence") +
-  scale_color_manual(values = hpa_colors, guide = "none") +
-  labs(
-    title = "log10(max_nTPM) per dataset, split by HPA evidence",
-    x = NULL,
-    y = "log10(max_nTPM + 1)"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    axis.text.x = element_text(angle = 35, hjust = 1),
-    panel.grid.major.x = element_blank()
-  )
-
-p_violin
-
+ggsave("../plots/pdf/Figure 3/Figure 3F.pdf", width = 10, height = 7, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3F.png", width = 10, height = 7, dpi = 300)
 ```
 
 ## Bars
@@ -1066,10 +765,9 @@ ggplot(hpa_max_filt, aes(x = tissue, fill = `HPA evidence`)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3H new.pdf", width = 14, height = 10, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3H new.png", width = 14, height = 10, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3G.pdf", width = 14, height = 10, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3G.png", width = 14, height = 10, dpi = 300)
 ```
-
 
 # Supplementary
 
@@ -1121,290 +819,6 @@ hpa_contributing_genes |>
   select(Ensembl, Gene, `HPA evidence`, `Uniprot evidence`, `Evidence annotation (transcript)`, `Evidence annotation (protein)`, multi_target, `RNA tissue specificity`) |>
   write_xlsx("../tables/Figure 3/HPA contributing genes v.25.xlsx")
 ```
-
-```{r}
- hpa_data %>%
-  select(Ensembl, Uniprot, `HPA evidence`) %>%
-  full_join(
-    uniprot_info %>% select(Entry, `Protein existence`),
-    by = c("Uniprot" = "Entry")
-  ) %>%
-  rename(`UniProt evidence` = `Protein existence`) %>%
-  mutate(
-    HPA = case_when(
-      is.na(`HPA evidence`) ~ "NA",
-      TRUE ~ `HPA evidence`
-    ),
-    UniProt = case_when(
-      is.na(`UniProt evidence`) ~ "NA",
-      `UniProt evidence` == "Inferred from homology" ~ "PE3: Inferred from homology",
-      `UniProt evidence` == "Predicted" ~ "PE4: Predicted",
-      `UniProt evidence` == "Uncertain" ~ "PE5: Uncertain",
-      `UniProt evidence` == "Evidence at protein level" ~ "PE1: Evidence at protein level",
-      `UniProt evidence` == "Evidence at transcript level" ~ "PE2: Evidence at transcript level",
-      TRUE ~ `UniProt evidence`
-    )
-  ) %>%
-  filter(
-    UniProt %in% c(
-      "PE3: Inferred from homology",
-      "PE4: Predicted",
-      "PE5: Uncertain",
-      "NA"
-    )
-  ) %>%
-  filter(HPA != "NA") %>%
-  filter(HPA != "No human protein/transcript evidence") |>
-  inner_join(hpa_data |> select(Ensembl, `RNA tissue specificity`), by = "Ensembl") |>
-  # Write to excel
-  write_csv("../tables/Figure 2/Supplementary tables.csv")
-```
-
-## Overlaps between UniProt and HPA
-
-```{r}
-# 1) identify your “contributing” proteins
-upset_base <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
-    by = "Ensembl"
-  ) 
-
-# Make a binary wide matrix: 1 if evidence in dataset, 0 otherwise
-upset_data <- upset_base %>%
-  distinct(Ensembl, Evidence_type) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = Evidence_type, values_from = value, values_fill = 0)
-
-set_order <- c("HPA: Evidence at protein level", 
-               "UniProt: Evidence at protein level", 
-               "HPA: Evidence at transcript level", 
-               "UniProt: Evidence at transcript level", 
-               "UniProt: Evidence at homology level", "
-               UniProt: Proten predicted", 
-               "Uniprot: Protein uncertain",
-               "HPA: No human protein/transcript evidence",
-               "Uniprot: No human protein/transcript evidence")
-
-# Reverse the order for plotting
-set_order <- rev(set_order)
-upset_data <- upset_data[, c("Ensembl", set_order)]
-
-upset_contributing_transcripts <- ComplexUpset::upset(
-  upset_data,
-  intersect = set_order,
-  set_sizes = (
-    upset_set_size(position = "right") +
-      geom_text(
-        aes(label = ..count..),
-        stat = "count",
-        hjust = 1,
-        size = 4
-      ) 
-  ),
-  width_ratio = 0.3,
-  sort_sets = FALSE,
-  guides = "over",
-)
-
-upset_contributing_transcripts
-```
-
-```{r}
-# 1) Prepare a combined binary annotation dataset clearly distinguishing sources
-upset_base <- hpa_data %>%
-  distinct(Ensembl, `HPA evidence`) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`) |>
-      mutate(`Uniprot evidence` = case_when(
-        `Uniprot evidence` == "Protein inferred from homology (PE3)" ~ "Protein inferred from homology",
-        `Uniprot evidence` == "Protein predicted (PE4)" ~ "Protein predicted",
-        `Uniprot evidence` == "Protein uncertain (PE5)" ~ "Protein uncertain",
-        `Uniprot evidence` == "Experimental evidence at protein level (PE1)" ~ "Evidence at protein level",
-        `Uniprot evidence` == "Experimental evidence at transcript level (PE2)" ~ "Evidence at transcript level"
-      )),
-    by = "Ensembl"
-  ) %>%
-  mutate(
-    `HPA evidence` = case_when(
-      is.na(`HPA evidence`) ~ "HPA: No human protein/transcript evidence",
-      TRUE ~ paste0("HPA: ", `HPA evidence`)
-    ),
-    `Uniprot evidence` = case_when(
-      is.na(`Uniprot evidence`) ~ "UniProt: No human protein/transcript evidence",
-      TRUE ~ paste0("UniProt: ", `Uniprot evidence`)
-    )
-  ) %>%
-  select(Ensembl, `HPA evidence`, `Uniprot evidence`)
-
-# 2) Pivot clearly into a wide binary matrix
-upset_data <- upset_base %>%
-  pivot_longer(cols = c(`HPA evidence`, `Uniprot evidence`),
-               names_to = "source",
-               values_to = "evidence") %>%
-  distinct(Ensembl, evidence) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = evidence, values_from = value, values_fill = 0)
-
-# 3) Your clearly defined column order (fixed typos)
-set_order <- c(
-  "HPA: Evidence at protein level",
-  "UniProt: Evidence at protein level",
-  "HPA: Evidence at transcript level",
-  "UniProt: Evidence at transcript level",
-  "UniProt: Protein inferred from homology",
-  "UniProt: Protein predicted",
-  "UniProt: Protein uncertain",
-  "HPA: No human protein/transcript evidence",
-  "UniProt: No human protein/transcript evidence"
-)
-
-# Check actual available columns (to avoid column-not-found errors)
-set_order <- intersect(set_order, colnames(upset_data))
-
-# Reverse order for ComplexUpset
-set_order <- rev(set_order)
-
-# Subset columns explicitly for ComplexUpset
-upset_data <- upset_data %>%
-  select(Ensembl, all_of(set_order))
-
-# 4) Create ComplexUpset plot
-upset_hpa_uniprot <- ComplexUpset::upset(
-  upset_data,
-  intersect = set_order,
-  set_sizes = (
-    upset_set_size(position = "right") +
-      geom_text(
-        aes(label = after_stat(count)),
-        stat     = "count",
-        hjust    = -0.1,         # move text to the right of bars
-        size     = 4,
-        color    = "black",      # black color
-        fontface = "bold"        # bold text
-      ) 
-  ),
-  width_ratio = 0.3,
-  sort_sets = FALSE,
-  guides = "over"
-)
-
-
-upset_hpa_uniprot
-```
-
-## Sankey plots
-
-### Tissue
-
-```{r}
-sankey_data <- hpa_data %>%
-  distinct(Ensembl, .keep_all = TRUE) %>%
-  full_join(
-    uniprot_data %>% select(Ensembl, `Uniprot evidence`),
-    by = "Ensembl"
-  ) %>%
-  mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
-  ) %>%
-  filter(
-    `Uniprot evidence` %in% c(
-      "No human protein/transcript evidence",
-      "Protein uncertain (PE5)",
-      "Protein predicted (PE4)",
-      "Protein inferred from homology (PE3)"
-    ),
-    `HPA evidence` == "Evidence at protein level" | `HPA evidence` == "Evidence at transcript level"
-  ) %>%
-  inner_join(hpa_data_v24 |> select(Ensembl, `RNA tissue specificity`),  by = "Ensembl") |>
-  count(`HPA evidence`, `RNA tissue specificity`, name = "Freq")
-
-desired_tissue_levels <- c(
-  "Tissue enriched",
-  "Group enriched",
-  "Tissue enhanced",
-  "Low tissue specificity",
-  "Not detected"
-)
-
-sankey_data <- sankey_data %>%
-  mutate(
-    `RNA tissue specificity` = factor(
-      `RNA tissue specificity`,
-      levels = desired_tissue_levels
-    )
-  )
-
-hpa_evidence_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No human protein/transcript evidence"                  = "firebrick"
-)
-
-tissue_spec_colors <- c(
-  "Tissue enriched"         = "#E31A1B",
-  "Group enriched"          = "#FE9D00",
-  "Tissue enhanced"         = "#B65EC4",
-  "Low tissue specificity"  = "#7D7D7D",
-  "Not detected"            = "#E4E4E4"
-)
-
-all_colors <- c(hpa_evidence_colors, tissue_spec_colors)
-
-p <- ggplot(
-  sankey_data,
-  aes(
-    axis1 = `HPA evidence`,
-    axis2 = `RNA tissue specificity`,
-    y     = Freq
-  )
-) +
-  geom_alluvium(aes(fill = `HPA evidence`),
-                width = 0.3, alpha = 0.8,
-                color = "gray50", size = 0.2) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 0.5, color = "black") +
-  geom_text(stat = "stratum",
-            aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
-            size = 4, vjust = 1.2) +
-  scale_x_discrete(
-    labels = c("HPA Evidence", "RNA Tissue Specificity"),
-    name   = NULL,
-    expand = c(.05, .05)
-  ) +
-  scale_fill_manual(values = all_colors) +
-  labs(
-    title = sprintf("HPA evidence → RNA tissue specificity\n(n = %d genes)", sum(sankey_data$Freq)),
-    y     = "Number of Genes",
-    fill  = "Category"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    axis.text.x     = element_text(size = 14, face = "bold"),
-    plot.title      = element_text(size = 16, face = "bold", hjust = 0.5)
-  )
-
-print(p)
-
-ggsave("../plots/pdf/Figure 3/Figure 3E.pdf", p, width = 10, height = 7, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3E.png", p, width = 10, height = 7, dpi = 300)
-```
-
-### Cell-type
-
-```{r}
-
-```
-
-
-### Immune
-
-### Cell line
-
-### Brain
-
 
 # SessionInfo
 
