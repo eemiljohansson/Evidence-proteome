@@ -34,13 +34,72 @@ uniprot_data <- read_csv("../data/HPA v.25/uniprot_v24.csv")
 head(uniprot_data)
 ```
 
+# Check data
+
+```{r}
+hpa_data |> distinct(Ensembl, .keep_all = TRUE) |>
+  select(Ensembl, `HPA evidence`) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  full_join(uniprot_data |> select(Ensembl, UniProt_gene = Gene, `UniProts uniprot` = UniProt, `Uniprot evidence`), by = "Ensembl") |>
+  count(`HPA evidence`, `Uniprot evidence`, name = "Number of genes") 
+
+hpa_data |> distinct(Ensembl, .keep_all = TRUE) |>
+  select(Ensembl, `HPA evidence`) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  full_join(uniprot_data |> select(Ensembl, UniProt_gene = Gene, `UniProts uniprot` = UniProt, `Uniprot evidence`), by = "Ensembl") |>
+  # UniProt entry
+  mutate(`Uniprot evidence` = case_when(
+    is.na(`Uniprot evidence`) ~ "No UniProt entry",
+    TRUE ~ `Uniprot evidence`
+  )) |>
+  # HPA entry
+  mutate(`HPA evidence` = case_when(
+    is.na(`HPA evidence`) ~ "No HPA entry",
+    TRUE ~ `HPA evidence`
+  )) %T>%
+  count(`HPA evidence`, `Uniprot evidence`, name = "Number of genes") 
+
+hpa_data |> distinct(Ensembl, .keep_all = TRUE) |>
+  select(Ensembl, `HPA evidence`) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  full_join(uniprot_data |> select(Ensembl, UniProt_gene = Gene, `UniProts uniprot` = UniProt, `Uniprot evidence`), by = "Ensembl") |>
+  # UniProt entry
+  mutate(`Uniprot evidence` = case_when(
+    is.na(`Uniprot evidence`) ~ "No UniProt entry",
+    TRUE ~ `Uniprot evidence`
+  )) |>
+  # HPA entry
+  mutate(`HPA evidence` = case_when(
+    is.na(`HPA evidence`) ~ "No HPA entry",
+    TRUE ~ `HPA evidence`
+  )) |>
+  filter(`HPA evidence` == "No HPA entry" | `Uniprot evidence` == "No UniProt entry") |>
+  write_xlsx("../tables/Figure 3/hpa_uniprot_no_entry.xlsx")
+```
+
+
+# Overview of data
+
+```{r}
+hpa_data |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  count(`HPA evidence`, name = "Number of genes") |>
+  arrange(desc(`HPA evidence`))
+```
+
+```{r}
+uniprot_data |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  count(`Uniprot evidence`, name = "Number of genes") |>
+  arrange(desc(`Uniprot evidence`))
+```
 # Themes
 
 ```{r}
 hpa_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No evidence"                  = "firebrick"
+  "Evidence at protein level"                       = "darkgreen",
+  "Evidence at transcript level"                    = "darkorange",
+  "No human protein/transcript evidence"            = "firebrick"
 )
 
 uniprot_colors <- c(
@@ -67,7 +126,7 @@ uniprot_levels <- c(
 
 hpa_levels <- c("Evidence at protein level",
                 "Evidence at transcript level",
-                "No evidence")
+                "No human protein/transcript evidence")
 
 hpa_levels <- rev(hpa_levels)
 ```
@@ -88,6 +147,8 @@ sankey_data <- hpa_data %>%
   full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
   mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No evidence",
                                                TRUE ~ `Uniprot evidence`))  |>
+  # Remove gene entries in UniProt that does not exist in HPA
+  filter(Ensembl %in% hpa_data$Ensembl) |>
   count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
 
 evidence_colors <- c(hpa_colors, uniprot_colors)
@@ -143,8 +204,112 @@ ggplot(sankey_data,
     legend.position = "top"
   )
 
-ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 14, height = 24, dpi = 300)
-ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 24, dpi = 300)
+ggsave("../plots/pdf/Figure 3/Figure 3A.pdf", width = 16, height = 24, dpi = 300)
+ggsave("../plots/png/Figure 3/Figure 3A.png", width = 16, height = 24, dpi = 300)
+```
+
+### Including non-similar entries
+
+```{r}
+# Colors
+hpa_colors_all <- c(
+  "Evidence at protein level"                       = "darkgreen",
+  "Evidence at transcript level"                    = "darkorange",
+  "No human protein/transcript evidence"            = "firebrick",
+)
+
+uniprot_colors_all <- c(
+  "Experimental evidence at protein level (PE1)"    = "darkgreen",
+  "Experimental evidence at transcript level (PE2)" = "darkorange",
+  "Protein inferred from homology (PE3)"            = "#cccccc", 
+  "Protein predicted (PE4)"                         = "#999999", 
+  "Protein uncertain (PE5)"                         = "#888888",  
+  "No UniProt entry"                                = "#444444"
+)
+
+# Levels
+uniprot_levels_all <- c(
+  "No UniProt entry",
+  "No evidence",
+  "Protein uncertain (PE5)",
+  "Protein predicted (PE4)",
+  "Protein inferred from homology (PE3)",
+  "Experimental evidence at transcript level (PE2)",
+  "Experimental evidence at protein level (PE1)"
+)
+
+hpa_levels_all <- c(
+  "Evidence at protein level",
+  "Evidence at transcript level",
+  "No human protein/transcript evidence",
+  "No HPA entry")
+
+hpa_levels_all <- rev(hpa_levels_all)
+
+# Plotting
+sankey_data <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
+  # UniProt no entry
+  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No UniProt entry",
+                                               TRUE ~ `Uniprot evidence`))  |>
+  # HPA no entry
+  mutate(`HPA evidence` = case_when (is.na(`HPA evidence`) ~ "No HPA entry",
+                                               TRUE ~ `HPA evidence`)) |>
+  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
+
+evidence_colors <- c(hpa_colors_all, uniprot_colors_all)
+
+sankey_data <- sankey_data %>%
+  mutate(
+    `HPA evidence`     = factor(`HPA evidence`, levels = hpa_levels_all),
+    `Uniprot evidence` = factor(`Uniprot evidence`, levels = uniprot_levels_all)
+  )
+
+sankey_data_label <- sankey_data %>%
+  tidyr::pivot_longer(
+    cols = c(`HPA evidence`, `Uniprot evidence`),
+    names_to = "axis",
+    values_to = "stratum"
+  ) %>%
+  group_by(axis, stratum) %>%
+  summarise(count = sum(Freq), .groups = "drop") %>%
+  mutate(label = paste0(stratum, "\n(", count, ")"))
+
+ggplot(sankey_data,
+       aes(axis1 = `HPA evidence`,
+           axis2 = `Uniprot evidence`,
+           y     = Freq)) +
+  geom_alluvium(aes(fill = `HPA evidence`), width = 0.4, alpha = 0.8,
+                color = "black", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5,
+               color = "black"
+  )  +
+  geom_text(
+    stat = "stratum",
+    aes(
+      label = after_stat(
+        paste0(stratum, "\n(", ..count.., ")")
+      )
+    ),
+    size = 4,
+    vjust = 1.2
+  ) +
+  scale_x_discrete(
+    limits = c("HPA Evidence", "UniProt Evidence"),
+    expand = c(0.05, 0.05)
+  ) +
+  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
+  labs(
+    title = "Sankey Plot of HPA and UniProt Evidence Categories",
+    y = "Number of Genes",
+    fill = "Evidence Category"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top"
+  )
 ```
 
 ## Sankey: Highlighting only genes that have no UniProt evidence
@@ -153,16 +318,16 @@ ggsave("../plots/png/Figure 3/Figure 3A.png", width = 14, height = 24, dpi = 300
 sankey_data <- hpa_data %>%
   distinct(Ensembl, .keep_all = TRUE) |>
   full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
-  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No evidence",
+  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No human protein/transcript evidence",
                                                TRUE ~ `Uniprot evidence`)) |>
-  filter(`Uniprot evidence` %in% c("No evidence", "Protein uncertain (PE5)", "Protein predicted (PE4)", "Protein inferred from homology (PE3)")) |>
-  filter(`HPA evidence` != "No evidence") %>%
+  filter(`Uniprot evidence` %in% c("No human protein/transcript evidence", "Protein uncertain (PE5)", "Protein predicted (PE4)", "Protein inferred from homology (PE3)")) |>
+  filter(`HPA evidence` != "No human protein/transcript evidence") %>%
   count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
 
 hpa_colors <- c(
-  "Evidence at protein level" = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No evidence" = "firebrick"
+  "Evidence at protein level"            = "darkgreen",
+  "Evidence at transcript level"         = "darkorange",
+  "No human protein/transcript evidence" = "firebrick"
 )
 uniprot_colors <- c(
   "Protein inferred from homology (PE3)" = "#cccccc",
@@ -180,7 +345,7 @@ sankey_data <- sankey_data %>%
         "Protein inferred from homology (PE3)",
         "Protein predicted (PE4)",
         "Protein uncertain (PE5)",
-        "No evidence" 
+        "No human protein/transcript evidence" 
       )
     )
   )
@@ -211,7 +376,7 @@ ggplot(sankey_data,
   ) +
   scale_fill_manual(values = evidence_colors, na.value = "#999999") +
   labs(
-    title = sprintf("HPA contributing genes v.24 (n = %d)", total_genes),
+    title = sprintf("HPA contributing genes v.25 (n = %d)", total_genes),
     y     = "Number of Genes",
     fill  = "Evidence Category"
   ) +
@@ -220,6 +385,104 @@ ggplot(sankey_data,
 ggsave("../plots/pdf/Figure 3/Figure 3B.pdf", width = 10, height = 7, dpi = 300)
 ggsave("../plots/png/Figure 3/Figure 3B.png", width = 10, height = 7, dpi = 300)
 ```
+
+```{r}
+# Colors
+hpa_colors_all <- c(
+  "Evidence at protein level"                       = "darkgreen",
+  "Evidence at transcript level"                    = "darkorange",
+  "No human protein/transcript evidence"            = "firebrick",
+  "No HPA entry"                                    = "#444444"
+)
+
+uniprot_colors_all <- c(
+  "Experimental evidence at protein level (PE1)"    = "darkgreen",
+  "Experimental evidence at transcript level (PE2)" = "darkorange",
+  "Protein inferred from homology (PE3)"            = "#cccccc", 
+  "Protein predicted (PE4)"                         = "#999999", 
+  "Protein uncertain (PE5)"                         = "#888888",  
+  "No UniProt entry"                                = "#444444"
+)
+
+evidence_colors <- c(hpa_colors_all, uniprot_colors_all)
+
+# Levels
+uniprot_levels_all <- c(
+  "No UniProt entry",
+  "No evidence",
+  "Protein uncertain (PE5)",
+  "Protein predicted (PE4)",
+  "Protein inferred from homology (PE3)",
+  "Experimental evidence at transcript level (PE2)",
+  "Experimental evidence at protein level (PE1)"
+)
+
+hpa_levels_all <- c(
+  "Evidence at protein level",
+  "Evidence at transcript level",
+  "No human protein/transcript evidence",
+  "No HPA entry")
+
+hpa_levels_all <- rev(hpa_levels_all)
+
+# Plotting
+sankey_data <- hpa_data %>%
+  distinct(Ensembl, .keep_all = TRUE) |>
+  full_join(uniprot_data |> select(Ensembl, `Uniprot evidence`), by = "Ensembl") |>
+  mutate(`Uniprot evidence` = case_when (is.na(`Uniprot evidence`) ~ "No UniProt entry",
+                                               TRUE ~ `Uniprot evidence`)) |>
+  filter(`Uniprot evidence` %in% c("No UniProt entry", "Protein uncertain (PE5)", "Protein predicted (PE4)", "Protein inferred from homology (PE3)")) |>
+  filter(!`HPA evidence` %in% c("No human protein/transcript evidence", "No HPA entry")) %>%
+  filter(!is.na(`HPA evidence`)) %>%
+  count(`HPA evidence`, `Uniprot evidence`, name = "Freq")
+
+sankey_data <- sankey_data %>%
+  mutate(
+    `Uniprot evidence` = factor(
+      `Uniprot evidence`,
+      levels = c(
+        "Protein inferred from homology (PE3)",
+        "Protein predicted (PE4)",
+        "Protein uncertain (PE5)",
+        "No human protein/transcript evidence",
+        "No UniProt entry"
+      )
+    )
+  )
+
+total_genes <- sum(sankey_data$Freq)
+
+ggplot(sankey_data,
+       aes(
+         axis1 = `Uniprot evidence`,
+         axis2 = `HPA evidence`,
+         y     = Freq
+       )
+) +
+  geom_alluvium(aes(fill = `Uniprot evidence`),
+                width = 0.4, alpha = 0.8,
+                color = "black", size = 0.2) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 0.5, color = "black") +
+  geom_text(
+    stat = "stratum",
+    aes(label = after_stat(paste0(stratum, "\n(", ..count.., ")"))),
+    size = 4, vjust = 1.2
+  ) +
+  scale_x_discrete(
+    limits = c("UniProt", "HPA"),
+    labels = c("UniProt Evidence", "HPA Evidence"),
+    expand = c(0.05, 0.05)
+  ) +
+  scale_fill_manual(values = evidence_colors, na.value = "#999999") +
+  labs(
+    title = sprintf("HPA contributing genes v.25 (n = %d)", total_genes),
+    y     = "Number of Genes",
+    fill  = "Evidence Category"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
 
 ## Dataset contribution
 
@@ -233,11 +496,11 @@ hpa_contributing_proteins <- hpa_data %>%
     by = "Ensembl"
   ) %>%
   mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
   ) %>%
   filter(
     `Uniprot evidence` %in% c(
-      "No evidence",
+      "No human protein/transcript evidence",
       "Protein uncertain (PE5)",
       "Protein predicted (PE4)",
       "Protein inferred from homology (PE3)"
@@ -348,11 +611,11 @@ hpa_contributing_transcripts <- hpa_data %>%
     by = "Ensembl"
   ) %>%
   mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
   ) %>%
   filter(
     `Uniprot evidence` %in% c(
-      "No evidence",
+      "No human protein/transcript evidence",
       "Protein uncertain (PE5)",
       "Protein predicted (PE4)",
       "Protein inferred from homology (PE3)"
@@ -823,7 +1086,7 @@ hpa_contributing_genes <- hpa_data |>
   filter(`Uniprot evidence` == "Protein inferred from homology (PE3)" | 
            `Uniprot evidence` == "Protein predicted (PE4)" | 
            `Uniprot evidence` == "Protein uncertain (PE5)" |
-           `Uniprot evidence` == "No evidence") 
+           `Uniprot evidence` == "No human protein/transcript evidence") 
 
 hpa_data |> 
   distinct(Ensembl, .keep_all = TRUE) |>
@@ -831,10 +1094,10 @@ hpa_data |>
     uniprot_data |> select(Ensembl, `Uniprot evidence`),
     by = "Ensembl"
   ) |>
-  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "No evidence") |>
-  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein inferred from homology (PE3)") |>
-  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein predicted (PE4) ") |>
-  filter(`HPA evidence` != "No evidence" & `Uniprot evidence` != "Protein uncertain (PE5)")
+  filter(`HPA evidence` != "No human protein/transcript evidence" & `Uniprot evidence` != "No human protein/transcript evidence") |>
+  filter(`HPA evidence` != "No human protein/transcript evidence" & `Uniprot evidence` != "Protein inferred from homology (PE3)") |>
+  filter(`HPA evidence` != "No human protein/transcript evidence" & `Uniprot evidence` != "Protein predicted (PE4) ") |>
+  filter(`HPA evidence` != "No human protein/transcript evidence" & `Uniprot evidence` != "Protein uncertain (PE5)")
 
 hpa_data |> 
   distinct(Ensembl, .keep_all = TRUE) |>
@@ -921,8 +1184,8 @@ set_order <- c("HPA: Evidence at protein level",
                "UniProt: Evidence at homology level", "
                UniProt: Proten predicted", 
                "Uniprot: Protein uncertain",
-               "HPA: No evidence",
-               "Uniprot: No evidence")
+               "HPA: No human protein/transcript evidence",
+               "Uniprot: No human protein/transcript evidence")
 
 # Reverse the order for plotting
 set_order <- rev(set_order)
@@ -965,11 +1228,11 @@ upset_base <- hpa_data %>%
   ) %>%
   mutate(
     `HPA evidence` = case_when(
-      is.na(`HPA evidence`) ~ "HPA: No evidence",
+      is.na(`HPA evidence`) ~ "HPA: No human protein/transcript evidence",
       TRUE ~ paste0("HPA: ", `HPA evidence`)
     ),
     `Uniprot evidence` = case_when(
-      is.na(`Uniprot evidence`) ~ "UniProt: No evidence",
+      is.na(`Uniprot evidence`) ~ "UniProt: No human protein/transcript evidence",
       TRUE ~ paste0("UniProt: ", `Uniprot evidence`)
     )
   ) %>%
@@ -993,8 +1256,8 @@ set_order <- c(
   "UniProt: Protein inferred from homology",
   "UniProt: Protein predicted",
   "UniProt: Protein uncertain",
-  "HPA: No evidence",
-  "UniProt: No evidence"
+  "HPA: No human protein/transcript evidence",
+  "UniProt: No human protein/transcript evidence"
 )
 
 # Check actual available columns (to avoid column-not-found errors)
@@ -1043,11 +1306,11 @@ sankey_data <- hpa_data %>%
     by = "Ensembl"
   ) %>%
   mutate(
-    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No evidence")
+    `Uniprot evidence` = coalesce(`Uniprot evidence`, "No human protein/transcript evidence")
   ) %>%
   filter(
     `Uniprot evidence` %in% c(
-      "No evidence",
+      "No human protein/transcript evidence",
       "Protein uncertain (PE5)",
       "Protein predicted (PE4)",
       "Protein inferred from homology (PE3)"
@@ -1076,7 +1339,7 @@ sankey_data <- sankey_data %>%
 hpa_evidence_colors <- c(
   "Evidence at protein level"    = "darkgreen",
   "Evidence at transcript level" = "darkorange",
-  "No evidence"                  = "firebrick"
+  "No human protein/transcript evidence"                  = "firebrick"
 )
 
 tissue_spec_colors <- c(
