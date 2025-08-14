@@ -20,7 +20,7 @@ library(gridGraphics)
 
 ```{r}
 hpa_data <- read_csv("../data/HPA v.25/hpa_evidence_v25.csv")
-head(hpa_data)
+head(hpa_data, n=10)
 ```
 
 # Plots
