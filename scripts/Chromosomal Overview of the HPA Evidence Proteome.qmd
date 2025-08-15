@@ -119,7 +119,6 @@ rsvg_png(svg_path, file = "chromosomal_hpa_evidence.png", width = 10 * 72, heigh
 # width/height in rsvg_png are in pixels
 ```
 
-
 ## Stacked bar plot of HPA evidence distribution by chromosome
 
 ```{r}
@@ -130,7 +129,7 @@ chrom_order <- c(as.character(1:22), "X", "Y")
 custom_colors <- c(
   "Evidence at protein level" = "darkgreen",     # blue
   "Evidence at transcript level" = "darkorange",  # orange
-  "No evidence" = "firebrick"  # red
+  "No human protein/transcript evidence" = "firebrick"  # red
 )
 
 # Plot
