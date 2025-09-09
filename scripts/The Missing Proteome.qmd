@@ -24,6 +24,9 @@ head(hpa_data_v25)
 
 uniprot_data <- read_csv("../data/HPA v.25/uniprot_v24.csv")
 head(uniprot_data)
+
+ortholog_data <- read_tsv("../data/Orthologs/orthologs_259_missing_proteins.txt")
+head(ortholog_data)
 ```
 
 # Counting missing proteome
@@ -42,7 +45,7 @@ nrow(v24_missing)
 ```{r}
 v25_missing <- hpa_data_v25 |>
   distinct(Ensembl, .keep_all = TRUE) |>
-  filter(`HPA evidence` == "No evidence")
+  filter(`HPA evidence` == "No human protein/transcript evidence")
 
 nrow(v25_missing)
 
