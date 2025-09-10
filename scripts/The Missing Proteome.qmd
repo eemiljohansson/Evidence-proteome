@@ -11,6 +11,9 @@ library(treemap)
 library(patchwork)
 library(writexl)
 library(readxl)
+library(eulerr)
+library(ggplotify)
+library(ComplexUpset)
 ```
 
 # Load data
@@ -27,6 +30,8 @@ head(uniprot_data)
 
 ortholog_data <- read_tsv("../data/Orthologs/orthologs_259_missing_proteins.txt")
 head(ortholog_data)
+
+literature_curated_genes <- read_xlsx("../data/Literature search/missing_proteome.xlsx")
 ```
 
 # Counting missing proteome
@@ -58,6 +63,96 @@ v25_missing |>
   setdiff(v_24_v_25_missing) |>
   inner_join(hpa_data_v24, by = "Ensembl")
 ```
+
+## Orthologs
+
+```{r}
+# 1) Join and extract the 4 binary ortholog columns
+ortholog_flags <- missing_proteome |>
+  inner_join(ortholog_data, by = c("Ensembl" = "Gene.stable.ID")) |>
+  select(Ensembl,
+         macaque_ortho, mouse_ortho, rat_ortho, pig_ortho) |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  # treat NA as 0, ensure logical TRUE/FALSE for eulerr
+  mutate(across(c(macaque_ortho, mouse_ortho, rat_ortho, pig_ortho),
+                ~ replace_na(as.numeric(.), 0))) |>
+  mutate(across(-Ensembl, ~ . > 0))
+
+# 2) Fit Euler diagram (rows = elements, columns = sets of logicals)
+fit <- eulerr::euler(ortholog_flags |>
+                       select(-Ensembl),
+                     shape = "ellipse")  # ellipse is robust for 4 sets
+
+# 3) Plot
+pal <- c("macaque_ortho" = "#66c2a5",
+         "mouse_ortho"   = "#fc8d62",
+         "rat_ortho"     = "#8da0cb",
+         "pig_ortho"     = "#e78ac3")
+
+p <- plot(
+  fit,
+  fills      = list(fill = unname(pal), alpha = 0.8),
+  edges      = list(col = "grey20", lwd = 1),
+  labels     = list(labels = c("Macaque", "Mouse", "Rat", "Pig"),
+                    col = "black", fontsize = 12, font = 2),
+  quantities = list(type = "counts", fontsize = 10, font = 2),
+  legend     = FALSE
+)
+
+p  # display
+
+# 4) Save (convert to ggplot object for ggsave)
+ggsave("../plots/png/Figure 4/orthologs_eulerr.png", ggplotify::as.ggplot(p), width = 6, height = 5, dpi = 300)
+ggsave("../plots/pdf/Figure 4/orthologs_eulerr.pdf", ggplotify::as.ggplot(p), width = 6, height = 5)
+```
+
+### Low - confidence orthologs
+
+```{r}
+low_conf_orthologs <- ortholog_data |>
+  # If for example macaque_identity is 0 then macaque_low is TRUE, otherwise FALSE
+  mutate(macaque_low = ifelse(macaque_ortho == 0, 1, 0)) |>
+  mutate(mouse_low   = ifelse(mouse_ortho   == 0, 1, 0)) |>
+  mutate(rat_low     = ifelse(rat_ortho     == 0, 1, 0)) |>
+  mutate(pig_low     = ifelse(pig_ortho     == 0, 1, 0)) |>
+  select(Ensembl = Gene.stable.ID,
+         macaque_low, mouse_low, rat_low, pig_low)
+
+
+# Convert 0/1 into logical TRUE/FALSE
+venn_data <- low_conf_orthologs %>%
+  mutate(across(c(macaque_low, mouse_low, rat_low, pig_low), ~ . == 1))
+
+# Fit the Euler diagram
+fit <- euler(
+  venn_data %>% select(macaque_low, mouse_low, rat_low, pig_low),
+  shape = "ellipse"
+)
+
+# Color palette
+pal <- c("macaque_low" = "#66c2a5",
+         "mouse_low"   = "#fc8d62",
+         "rat_low"     = "#8da0cb",
+         "pig_low"     = "#e78ac3")
+
+# Plot
+p <- plot(
+  fit,
+  fills      = list(fill = unname(pal), alpha = 0.7),
+  edges      = list(col = "grey30"),
+  labels     = list(labels = c("Macaque low", "Mouse low", "Rat low", "Pig low"),
+                    col = "black", fontsize = 12, font = 2),
+  quantities = list(type = "counts", fontsize = 10, font = 2),
+  legend     = FALSE
+)
+
+p  # show
+
+# Save
+ggsave("..plots/venn_low_conf_orthologs.png", as.ggplot(p), width = 6, height = 5, dpi = 300)
+ggsave("..plots/venn_low_conf_orthologs.pdf", as.ggplot(p), width = 6, height = 5)
+```
+
 
 ## UniProt evidence
 
@@ -93,6 +188,9 @@ missing_proteome_no_go <- missing_proteome |>
 
 missing_proteome_no_go
 nrow(missing_proteome_no_go)
+
+missing_proteome_no_go |>
+  write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
 
 missing_proteome_no_go |>
   write_xlsx("../tables/Figure 4/missing_proteome.xlsx")
@@ -195,6 +293,260 @@ combined_missing <- p1 + p2 + plot_layout(ncol = 2)
 ggsave("../plots/pdf/Figure 4/Combined_Missing_Treemaps.pdf", combined_missing, width = 14, height = 7, dpi = 300)
 ggsave("../plots/png/figure 4/Combined_Missing_Treemaps.png", combined_missing, width = 14, height = 7)
 ```
+
+## Literature search
+
+```{r}
+literature_search_missing <- missing_proteome_no_go |>
+  select(Ensembl) |>
+  inner_join(literature_curated_genes, by = "Ensembl") |>
+  select(Ensembl, Gene, `Gene synonym`, `Gene description`, Chromosome, Antibody, PMID, Comment) 
+
+literature_search_missing |>
+  write_xlsx("../tables/Figure 4/missing_proteome_literature_curated.xlsx")
+```
+
+## Relation between GO terms and orthologous genes
+
+```{r}
+missing_proteome_with_go_orthologs <- missing_proteome |>
+  mutate(has_go = if_else(Ensembl %in% missing_proteome_with_go$Ensembl, "Yes", "No")) |>
+  mutate(has_ortho = if_else(Ensembl %in% ortholog_flags$Ensembl, "Yes", "No")) |>
+  mutate(is_missing = "Yes") |>
+  select(Ensembl, has_go, has_ortho, is_missing)
+  
+# 1) Convert Yes/No to logical TRUE/FALSE
+venn_data <- missing_proteome_with_go_orthologs %>%
+  mutate(across(c(has_go, has_ortho, is_missing), ~ . == "Yes"))
+
+# 2) Fit Euler diagram
+fit <- euler(venn_data %>% select(has_go, has_ortho, is_missing),
+             shape = "ellipse")
+
+# 3) Plot
+pal <- c("has_go"     = "#1b9e77",
+         "has_ortho"  = "#d95f02",
+         "is_missing" = "#7570b3")
+
+p <- plot(
+  fit,
+  fills      = list(fill = unname(pal), alpha = 0.7),
+  edges      = list(col = "grey30", lwd = 1),
+  labels     = list(labels = c("GO annotated", "Ortholog present", "Missing proteome"),
+                    col = "black", fontsize = 12, font = 2),
+  quantities = list(type = "counts", fontsize = 10, font = 2),
+  legend     = FALSE
+)
+
+p  # show
+```
+
+## Upset orthologs
+
+```{r}
+ortholog_flags <- missing_proteome |>
+  inner_join(ortholog_data, by = c("Ensembl" = "Gene.stable.ID")) |>
+  select(Ensembl,
+         macaque_types, mouse_types, rat_types, pig_types) |>
+  distinct(Ensembl, .keep_all = TRUE) 
+
+
+rna_datasets <- c("Tissue", "Brain", "Cell type", "Immune cell type", "Cell line")
+
+evidence_only <- hpa_data %>%
+  filter(Dataset %in% rna_datasets)
+
+upset_data <- evidence_only %>%
+  mutate(set_name = Evidence_type) %>%
+  select(Ensembl, set_name) %>%
+  distinct() %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = set_name, values_from = value, values_fill = 0)
+
+set_order <- c("Tissue evidence", "Brain evidence", "Cell type evidence", "Immune cell type evidence", "Cell line evidence")
+set_order <- rev(set_order)
+upset_data <- upset_data[, c("Ensembl", set_order)]
+
+upset_data$overlap_count <- rowSums(upset_data[, set_order])
+
+upset_long <- upset_data %>%
+  select(Ensembl, overlap_count, all_of(set_order)) %>%
+  pivot_longer(cols = all_of(set_order), names_to = "set", values_to = "present") %>%
+  filter(present == 1) 
+
+
+fig2a <- ComplexUpset::upset(
+  data = upset_data,
+  intersect   = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4,
+        color = "white",
+        fontface = "bold"
+      ) 
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over"
+)
+
+fig2a
+```
+
+```{r}
+# 1. Create 0/1 flags from ortholog_types (NA = 0, anything else = 1)
+upset_data <- ortholog_flags %>%
+  mutate(across(c(macaque_types, mouse_types, rat_types, pig_types),
+                ~ ifelse(is.na(.), 0, 1))) %>%
+  rename(
+    Macaque = macaque_types,
+    Mouse   = mouse_types,
+    Rat     = rat_types,
+    Pig     = pig_types
+  ) %>%
+  distinct(Ensembl, .keep_all = TRUE)
+
+# 2. Set order
+set_order <- c("Macaque", "Mouse", "Rat", "Pig")
+
+# 3. Add overlap count
+upset_data <- upset_data %>%
+  mutate(overlap_count = rowSums(across(all_of(set_order))))
+
+# 4. Build upset plot
+fig_orthologs <- ComplexUpset::upset(
+  data = upset_data,
+  intersect = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4,
+        color = "white",
+        fontface = "bold"
+      )
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over"
+)
+
+fig_orthologs
+```
+
+```{r}
+library(dplyr)
+library(ComplexUpset)
+library(ggplot2)
+
+# 1. Expand each species into three binary sets
+upset_data <- ortholog_flags %>%
+  transmute(
+    Ensembl,
+    Macaque_one2one    = ifelse(macaque_types == "ortholog_one2one",    1, 0),
+    Macaque_one2many   = ifelse(macaque_types == "ortholog_one2many",   1, 0),
+    Macaque_many2many  = ifelse(macaque_types == "ortholog_many2many",  1, 0),
+    
+    Mouse_one2one      = ifelse(mouse_types   == "ortholog_one2one",    1, 0),
+    Mouse_one2many     = ifelse(mouse_types   == "ortholog_one2many",   1, 0),
+    Mouse_many2many    = ifelse(mouse_types   == "ortholog_many2many",  1, 0),
+    
+    Rat_one2one        = ifelse(rat_types     == "ortholog_one2one",    1, 0),
+    Rat_one2many       = ifelse(rat_types     == "ortholog_one2many",   1, 0),
+    Rat_many2many      = ifelse(rat_types     == "ortholog_many2many",  1, 0),
+    
+    Pig_one2one        = ifelse(pig_types     == "ortholog_one2one",    1, 0),
+    Pig_one2many       = ifelse(pig_types     == "ortholog_one2many",   1, 0),
+    Pig_many2many      = ifelse(pig_types     == "ortholog_many2many",  1, 0)
+  ) %>%
+  distinct(Ensembl, .keep_all = TRUE)
+
+# 2. Choose set order (grouped by species)
+set_order <- c(
+  "Macaque_one2one", "Macaque_one2many", "Macaque_many2many",
+  "Mouse_one2one",   "Mouse_one2many",   "Mouse_many2many",
+  "Rat_one2one",     "Rat_one2many",     "Rat_many2many",
+  "Pig_one2one",     "Pig_one2many",     "Pig_many2many"
+)
+
+# 3. Add overlap counts
+upset_data <- upset_data %>%
+  mutate(overlap_count = rowSums(across(all_of(set_order))))
+
+# 4. Plot upset diagram
+fig_orthologs_types <- ComplexUpset::upset(
+  data = upset_data,
+  intersect = set_order,
+  base_annotations = list(
+    'Number of genes' = intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 3.5,
+        color = "white",
+        fontface = "bold"
+      )
+  ),
+  width_ratio = 0.3,
+  sort_sets = FALSE,
+  guides = "over"
+)
+
+fig_orthologs_types
+
+
+# checking data
+flagged_ens <- upset_data |>
+  # Filter for genes that have NA or 0 for all ortholog types
+  pivot_longer(cols = -Ensembl, names_to = "type", values_to = "value") |>
+  # set NA to 0
+  mutate(value = replace_na(value, 0)) |>
+  group_by(Ensembl) |>
+  summarize(total = sum(value)) |>
+  filter(total == 0)
+  
+
+ortholog_flags |>
+  filter(Ensembl %in% flagged_ens$Ensembl)
+```
+
 
 # SessionInfo
 
