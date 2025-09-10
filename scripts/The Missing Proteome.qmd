@@ -89,7 +89,7 @@ pal <- c("macaque_ortho" = "#66c2a5",
          "rat_ortho"     = "#8da0cb",
          "pig_ortho"     = "#e78ac3")
 
-p <- plot(
+p_ortho <- plot(
   fit,
   fills      = list(fill = unname(pal), alpha = 0.8),
   edges      = list(col = "grey20", lwd = 1),
@@ -99,7 +99,7 @@ p <- plot(
   legend     = FALSE
 )
 
-p  # display
+p_ortho  # display
 
 # 4) Save (convert to ggplot object for ggsave)
 ggsave("../plots/png/Figure 4/orthologs_eulerr.png", ggplotify::as.ggplot(p), width = 6, height = 5, dpi = 300)
@@ -119,8 +119,11 @@ low_conf_orthologs <- ortholog_data |>
          macaque_low, mouse_low, rat_low, pig_low)
 
 
+
+
 # Convert 0/1 into logical TRUE/FALSE
-venn_data <- low_conf_orthologs %>%
+venn_data <- missing_proteome |>
+  inner_join(low_conf_orthologs, by = "Ensembl") |>
   mutate(across(c(macaque_low, mouse_low, rat_low, pig_low), ~ . == 1))
 
 # Fit the Euler diagram
@@ -151,6 +154,56 @@ p  # show
 # Save
 ggsave("..plots/venn_low_conf_orthologs.png", as.ggplot(p), width = 6, height = 5, dpi = 300)
 ggsave("..plots/venn_low_conf_orthologs.pdf", as.ggplot(p), width = 6, height = 5)
+```
+
+### More generous
+
+```{r}
+generous_ortho <- ortholog_data |>
+  # If a gene has _ortho as 0, then if _identity is > 0, then _ortho should be set to 1.
+  mutate(macaque_ortho = ifelse(macaque_ortho == 0 & macaque_identity > 0, 1, macaque_ortho)) |>
+  mutate(mouse_ortho   = ifelse(mouse_ortho   == 0 & mouse_identity   > 0, 1, mouse_ortho)) |>
+  mutate(rat_ortho     = ifelse(rat_ortho     == 0 & rat_identity     > 0, 1, rat_ortho)) |>
+  mutate(pig_ortho     = ifelse(pig_ortho     == 0 & pig_identity     > 0, 1, pig_ortho)) |>
+  select(Ensembl = Gene.stable.ID,
+         macaque_ortho, mouse_ortho, rat_ortho, pig_ortho) |>
+  distinct(Ensembl, .keep_all = TRUE)
+
+
+# Convert 0/1 into logical TRUE/FALSE
+venn_data <- missing_proteome |>
+  inner_join(generous_ortho, by = "Ensembl") |>
+  mutate(across(c(macaque_ortho, mouse_ortho, rat_ortho, pig_ortho), ~ . == 1))
+
+# Fit the Euler diagram
+fit <- euler(
+  venn_data %>% select(macaque_ortho, mouse_ortho, rat_ortho, pig_ortho),
+  shape = "ellipse"
+)
+
+# Color palette
+pal <- c("macaque_ortho" = "#66c2a5",
+         "mouse_ortho"   = "#fc8d62",
+         "rat_ortho"     = "#8da0cb",
+         "pig_ortho"     = "#e78ac3")
+
+# Plot
+p_generous <- plot(
+  fit,
+  fills      = list(fill = unname(pal), alpha = 0.7),
+  edges      = list(col = "grey30"),
+  labels     = list(labels = c("Macaque ortho", "Mouse ortho", "Rat ortho", "Pig ortho"),
+                    col = "black", fontsize = 12, font = 2),
+  quantities = list(type = "counts", fontsize = 10, font = 2),
+  legend     = FALSE
+)
+
+p_generous  # show
+```
+
+```{r}
+as.ggplot(p_ortho) + labs(title = "Strict orthologs") +
+  as.ggplot(p_generous) + labs(title = "Generous orthologs")
 ```
 
 
