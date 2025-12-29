@@ -1,0 +1,235 @@
+---
+title: "DVP"
+format: html
+---
+
+# Load libraries
+
+```{r}
+library(tidyverse)
+```
+
+# Read data
+
+```{r}
+# Read in HPA v.25 data
+evidence_data <- read_csv("../data/HPA v.25/hpa_uniprot_evidence_dataset_v25.csv")
+
+# Read in DVP data
+dvp_cell_raw <- read_tsv("../data/HPA v.25/datasets/Protein/DVP/ms_data_cell_type.tsv")
+dvp_bulk_raw <- read_tsv("../data/HPA v.25/datasets/Protein/DVP/ms_data.tsv")
+```
+
+# Wrangle data
+
+## DVP cell type
+
+```{r}
+dvp_cell_long <- dvp_cell_raw |>
+  group_by(protein) |>
+  mutate(
+    n_npx_total = sum(!is.na(c_across(starts_with("npx")))),
+    `DVP evidence` = if_else(
+      n_npx_total >= 3,
+      "Evidence at protein level",
+      "No DVP evidence"
+    )
+  ) |>
+  ungroup() |>
+  select(-n_npx_total) |>
+  full_join(
+    evidence_data |>
+      select(Ensembl, protein = UniProt, `HPA evidence`, `Uniprot evidence`),
+    by = "protein"
+  ) |>
+  select(Ensembl, UniProt = protein, `HPA evidence`, `Uniprot evidence`, `DVP evidence`, Sample = sample, Intensity = npx)
+
+# How many proteins have DVP evidence?
+dvp_cell_long |>
+  distinct(UniProt, `DVP evidence`) |>
+  count(`DVP evidence`)
+
+dvp_cell_long |> distinct(UniProt) |> nrow()
+dvp_cell_long |> distinct(Ensembl) |> nrow()
+
+# Inspect a single protein
+dvp_cell_long |>
+  filter(UniProt == "A0A024R1R8") |>
+  select(UniProt, Intensity, `DVP evidence`)
+```
+
+## DVP bulk tissue
+
+```{r}
+dvp_bulk_long <- dvp_bulk_raw |>
+  group_by(protein) |>
+  mutate(
+    n_npx_total = sum(!is.na(c_across(starts_with("npx")))),
+    `DVP evidence` = if_else(
+      n_npx_total >= 3,
+      "Evidence at protein level",
+      "No DVP evidence"
+    )
+  ) |>
+  ungroup() |>
+  select(-n_npx_total) |>
+  full_join(
+    evidence_data |>
+      select(Ensembl, protein = UniProt, `HPA evidence`, `Uniprot evidence`),
+    by = "protein"
+  ) |>
+  select(Ensembl, UniProt = protein, `HPA evidence`, `Uniprot evidence`, `DVP evidence`, Sample = sample, Intensity = npx)
+
+# How many proteins have DVP evidence?
+dvp_bulk_long |>
+  distinct(UniProt, `DVP evidence`) |>
+  count(`DVP evidence`)
+```
+
+# DVP contribution
+
+## Cell type
+
+### Contributing to HPA
+
+```{r}
+dvp_cell_long |>
+  distinct(Ensembl, `HPA evidence`, `DVP evidence`) |>
+  count(`HPA evidence`, `DVP evidence`) |>
+  arrange(desc(n)) |>
+  print(n = Inf)
+```
+
+### Contributing to UniProt
+
+```{r}
+dvp_cell_long |>
+  distinct(Ensembl, `Uniprot evidence`, `DVP evidence`) |>
+  count(`Uniprot evidence`, `DVP evidence`) |>
+  arrange(desc(n)) |>
+  print(n = Inf)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ComplexUpset)
+library(ggplot2)
+
+upset_base <- dvp_cell_long %>%
+  distinct(Ensembl, `Uniprot evidence`, `DVP evidence`) %>%
+  mutate(
+    `Uniprot evidence` = replace_na(`Uniprot evidence`, "No UniProt evidence"),
+    `DVP evidence`     = replace_na(`DVP evidence`, "No DVP evidence")
+  )
+
+
+upset_data <- upset_base %>%
+  mutate(
+    # --- UniProt evidence sets (EXACT categories)
+    `PE1 protein` = `Uniprot evidence` == "Experimental evidence at protein level (PE1)",
+    `PE2 transcript` = `Uniprot evidence` == "Experimental evidence at transcript level (PE2)",
+    `PE3 homology` = `Uniprot evidence` == "Protein inferred from homology (PE3)",
+    `PE4 predicted` = `Uniprot evidence` == "Protein predicted (PE4)",
+    `PE5 uncertain` = `Uniprot evidence` == "Protein uncertain (PE5)",
+    `No UniProt evidence` = `Uniprot evidence` == "No UniProt evidence",
+
+    # --- DVP evidence sets
+    `DVP protein evidence` = `DVP evidence` == "Evidence at protein level",
+    `No DVP evidence`      = `DVP evidence` == "No DVP evidence"
+  ) %>%
+  select(
+    Ensembl,
+    `PE1 protein`,
+    `PE2 transcript`,
+    `PE3 homology`,
+    `PE4 predicted`,
+    `PE5 uncertain`,
+    `No UniProt evidence`,
+    `DVP protein evidence`,
+    `No DVP evidence`
+  )
+
+set_order <- c(
+  "PE1 protein",
+  "PE2 transcript",
+  "PE3 homology",
+  "PE4 predicted",
+  "PE5 uncertain",
+  "No UniProt evidence",
+  "DVP protein evidence",
+  "No DVP evidence"
+)
+
+set_order <- rev(set_order)
+
+upset_uniprot_dvp <- ComplexUpset::upset(
+  upset_data,
+  intersect = set_order,
+
+  base_annotations = list(
+    "Number of genes" = ComplexUpset::intersection_size(
+      text = list(
+        size     = 4,
+        vjust    = -0.5,
+        fontface = "bold",
+        color    = "black"
+      )
+    )
+  ),
+
+  set_sizes = (
+    upset_set_size(position = "right") +
+      geom_text(
+        aes(label = ..count..),
+        stat = "count",
+        hjust = 1,
+        size = 4,
+        color = "white",
+        fontface = "bold"
+      )
+  ),
+
+  width_ratio = 0.3,
+  sort_sets   = FALSE,
+  guides      = "over"
+)
+
+upset_uniprot_dvp
+
+```
+
+
+## Bulk tissue
+
+### Contributing to HPA
+
+```{r}
+dvp_bulk_long |>
+  distinct(Ensembl, `HPA evidence`, `DVP evidence`) |>
+  count(`HPA evidence`, `DVP evidence`) |>
+  arrange(desc(n)) |>
+  print(n = Inf)
+```
+
+### Contributing to UniProt
+
+```{r}
+dvp_bulk_long |>
+  distinct(Ensembl, `Uniprot evidence`, `DVP evidence`) |>
+  count(`Uniprot evidence`, `DVP evidence`) |>
+  arrange(desc(n)) |>
+  print(n = Inf)
+```
+
+# Total contribution
+
+```{r}
+dvp_cell_long |>
+  distinct(Ensembl, `HPA evidence`, `Uniprot evidence`, `DVP evidence`) |>
+  count(`HPA evidence`, `Uniprot evidence`, `DVP evidence`) |>
+  arrange(desc(n)) |>
+  print(n = Inf)
+```
+
+
