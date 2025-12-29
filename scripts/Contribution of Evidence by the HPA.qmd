@@ -16,6 +16,7 @@ library(scales)
 library(patchwork)
 library(ggridges)
 library(grid)
+library(ComplexUpset)
 ```
 
 # Load data
@@ -32,6 +33,9 @@ head(tissue_data)
 
 uniprot_data <- read_csv("../data/HPA v.25/uniprot_v24.csv")
 head(uniprot_data)
+
+multi_target_data <- read_tsv("../data/HPA v.25/datasets/Protein/genes_with_only_multitarget_abs.txt")
+multi_target_data <- multi_target_data |> rename(Ensembl = ensg_id, Gene = display_name)
 ```
 
 # Check data
@@ -445,6 +449,14 @@ ggsave(
 ```
 
 ```{r}
+# Print the proteins that overlap with all 3 protein datasets
+common_all |> as.data.frame() |> rename(Ensembl = common_all) |>
+  inner_join(hpa_data_v24 |> select(Ensembl, Gene, `Gene synonym`, `Gene description`, Uniprot, Chromosome), by = "Ensembl") |>
+  write_xlsx("../tables/Figure 3/venn_common_all_proteins.xlsx")
+```
+
+
+```{r}
 wb_contributing <- venn_data$`Western blot` |> as.data.frame() |> rename(Ensembl = "venn_data$`Western blot`") |>
   mutate(WB = "Yes")
 icc_contibuting <- venn_data$immunocytochemistry |> as.data.frame() |> rename(Ensembl = "venn_data$immunocytochemistry") |>
@@ -507,7 +519,7 @@ upset_contributing_transcripts <- ComplexUpset::upset(
   upset_data,
   intersect = set_order,
   base_annotations = list(
-    'Number of genes' = intersection_size(
+    'Number of genes' = ComplexUpset::intersection_size(
       text = list(
         size     = 4,
         vjust    = -0.5,
@@ -551,6 +563,17 @@ hpa_data_v24 %>%
   select(Ensembl, `RNA tissue specificity`, `RNA single cell type specificity`, `RNA blood cell specificity`, `RNA brain regional specificity`, `RNA cell line specificity`) |>
   filter(Ensembl %in% c(hpa_contributing_transcripts, hpa_contributing_proteins)) 
 ```
+
+```{r}
+ens_keep <- c(hpa_contributing_transcripts, hpa_contributing_proteins)
+```
+
+```{r}
+hpa_contributing_transcripts |> as.data.frame() |> rename(Ensembl = hpa_contributing_transcripts) |>
+  mutate(`Contribution status` = "Transcript level evidence") |>
+  bind_rows(hpa_contributing_proteins |> as.data.frame() |> rename(Ensembl = hpa_contributing_proteins) |> mutate(`Contribution status` = "Protein level evidence"))
+```
+
 
 ```{r}
 # --- colors & factor levels

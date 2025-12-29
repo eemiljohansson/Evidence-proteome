@@ -36,6 +36,17 @@ literature_curated_genes <- read_xlsx("../data/Literature search/missing_proteom
 
 # Counting missing proteome
 
+```{r}
+hpa_data_v24
+```
+
+
+```{r}
+hpa_data_v25 |>
+  distinct(Ensembl)
+```
+
+
 ## v.24 - Missing proteome
 
 ```{r}
@@ -65,6 +76,12 @@ v25_missing |>
 ```
 
 ## Orthologs
+
+```{r}
+missing_proteome |>
+  write_xlsx("../tables/Figure 4/missing_proteome_126.xlsx")
+```
+
 
 ### More strict
 
@@ -336,6 +353,11 @@ p_ortho_counts +
 ```
 
 ## UniProt evidence
+
+```{r}
+
+```
+
 
 ```{r}
 missing_proteome <- v25_missing |>

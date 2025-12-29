@@ -313,6 +313,25 @@ write_csv(hpa_evidence_v25, "../data/HPA v.25/hpa_evidence_v25.csv")
 write_csv(uniprot_data_v24, "../data/HPA v.25/uniprot_v24.csv")
 ```
 
+## HPA evidence dataset
+
+```{r}
+hpa_evidence_dataset <- hpa_evidence_v25 |>
+  select(Ensembl, `HPA evidence`) |>
+  distinct(Ensembl, .keep_all = TRUE) |>
+  # bind Ensembl hpa_data_v24 that are not in hpa_evidence_v25
+  bind_rows(
+    hpa_data_v24 |>
+      select(Ensembl) |>
+      filter(!Ensembl %in% hpa_evidence_v25$Ensembl) |>
+      mutate(`HPA evidence` = "Excluded from evidence analysis")
+  ) |>
+  full_join(uniprot_data_v24 |> select(Ensembl, UniProt, `Uniprot evidence`), by = "Ensembl") |>
+  select(Ensembl, UniProt, `HPA evidence`, `Uniprot evidence`) 
+
+write_csv(hpa_evidence_dataset, "../data/HPA v.25/hpa_uniprot_evidence_dataset_v25.csv")
+```
+
 # sessionInfo
 
 ```{r}

@@ -60,7 +60,7 @@ hpa_genome <- hpa_data_v25 |>
   # Replace No evidence with 0 and all other values with 1
   mutate(`HPA evidence` = case_when(`HPA evidence` == "Evidence at protein level" ~ 1,
                                     `HPA evidence` == "Evidence at transcript level" ~ 0.5,
-                                    `HPA evidence` == "No evidence" ~ 0)) |>
+                                    `HPA evidence` == "No human protein/transcript evidence" ~ 0)) |>
   arrange(Gene)
 ```
 
@@ -266,9 +266,9 @@ df <- hpa_genome %>%
 # HPA evidence plot
 # your custom palette
 custom_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No evidence"                  = "firebrick"
+  "Evidence at protein level"            = "darkgreen",
+  "Evidence at transcript level"         = "darkorange",
+  "No human protein/transcript evidence" = "firebrick"
 )
 
 hpa_plot <- df %>%
@@ -294,7 +294,94 @@ hpa_plot
 
 ggsave("hpa_chr1_100_relative_.pdf", hpa_plot, width = 20, height = 7, dpi = 300, path = "../plots/pdf/Figure 5")
 ggsave("hpa_chr1_100_relative_.png", hpa_plot, width = 20, height = 7, dpi = 300, path = "../plots/png/Figure 5")
+
+ggsave("hpa_chr1_100_relative_poster.pdf", hpa_plot, width = 18, height = 5, dpi = 300, path = "../plots/pdf/Figure 5")
 ```
+
+```{r}
+add_segments <- function(df, 
+                         chr_col = "Chromosome", 
+                         start_col = "Start", 
+                         genes_per_segment = 10,
+                         prefix = "chr") {
+  chr_sym <- sym(chr_col)
+  start_sym <- sym(start_col)
+
+  df %>%
+    arrange(!!chr_sym, !!start_sym) %>%
+    group_by(!!chr_sym) %>%
+    mutate(
+      segment = paste0(prefix, !!chr_sym, "_part_", ceiling(row_number() / genes_per_segment))
+    ) %>%
+    ungroup()
+}
+
+genes_per_segment <- 20
+chromosome <- "1"
+
+
+# Prepare the data
+df <- hpa_genome %>%
+  select(-`HPA evidence`) %>%
+  # Add HPA evidence
+  inner_join(hpa_data_v25 %>% 
+               distinct(Ensembl, .keep_all = TRUE) %>%
+               select(Gene = Ensembl, `HPA evidence`), 
+             by = "Gene") %>%
+  # Add gene symbols
+  inner_join(hpa_data_v24 %>% 
+               select(Gene = Ensembl, Gene_symbol = Gene), 
+             by = "Gene") %>%
+  filter(Chromosome == chromosome) %>%
+  mutate(molecule = paste0("chr", Chromosome)) %>%
+  rename(start = Start, end = End, orientation = Strand, gene = Gene) %>%
+  mutate(
+    strand = ifelse(orientation == 1, "forward", "reverse"),
+    orientation = ifelse(orientation == -1, 0, orientation)
+  ) %>%
+  add_segments(chr_col = "molecule", start_col = "start", genes_per_segment = genes_per_segment) %>%
+  mutate(segment = factor(segment, 
+                          levels = unique(segment[order(as.numeric(str_extract(segment, "\\d+$")))]))
+         ) |>
+  # Filter for the 100 gene with the lowest start
+  filter(!is.na(start) & !is.na(end)) %>%
+  arrange(start) %>%
+  slice_head(n = 100)
+
+# HPA evidence plot
+# your custom palette
+custom_colors <- c(
+  "Evidence at protein level"            = "darkgreen",
+  "Evidence at transcript level"         = "darkorange",
+  "No human protein/transcript evidence" = "firebrick"
+)
+
+hpa_plot <- df %>%
+  ggplot(aes(
+    xmin     = start,
+    xmax     = end,
+    y        = segment,
+    fill     = `HPA evidence`,
+    label    = Gene_symbol,
+    forward  = orientation
+  )) +
+  geom_gene_arrow() +
+  geom_gene_label(align = "left") +
+  facet_wrap(~ segment, scales = "free", ncol = 1) +
+  theme_genes() +
+  scale_fill_manual(
+    name   = "HPA evidence",
+    values = custom_colors,
+    na.value = "grey80"
+  ) +
+  # remove legend
+  theme(legend.position = "none")
+
+hpa_plot
+
+ggsave("hpa_chr1_100_relative_poster.pdf", hpa_plot, width = 18, height = 5, dpi = 300, path = "../plots/pdf/Figure 5")
+```
+
 
 ```{r}
 chromosome <- "1"
@@ -338,9 +425,9 @@ df <- df %>%
 
 # Custom palette
 custom_colors <- c(
-  "Evidence at protein level"    = "darkgreen",
-  "Evidence at transcript level" = "darkorange",
-  "No evidence"                  = "firebrick"
+  "Evidence at protein level"            = "darkgreen",
+  "Evidence at transcript level"         = "darkorange",
+  "No human protein/transcript evidence" = "firebrick"
 )
 
 # Plotting
